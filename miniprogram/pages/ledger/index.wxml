@@ -1,0 +1,21 @@
+<view class="page-shell">
+  <view class="page-header">
+    <text class="page-title">记账</text>
+    <text class="page-description">账单录入和流水查询将在独立任务中实现。</text>
+  </view>
+
+  <view class="page-state-card">
+    <app-loading wx:if="{{viewState === 'loading'}}" message="正在加载账单" />
+    <app-error-state
+      wx:elif="{{viewState === 'error'}}"
+      message="{{errorMessage}}"
+      bind:retry="handleRetry"
+    />
+    <app-empty
+      wx:else
+      title="记账骨架已就绪"
+      description="当前未创建账单，也未使用模拟数据"
+    />
+  </view>
+</view>
+

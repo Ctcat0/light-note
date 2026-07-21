@@ -1,0 +1,18 @@
+node_modules/
+coverage/
+dist/
+.tmp/
+
+# 微信开发者工具的本机私有配置
+project.private.config.json
+
+# 本地环境文件和密钥文件
+.env
+.env.*
+!.env.example
+
+# 编辑器和系统文件
+.DS_Store
+Thumbs.db
+*.log
+

@@ -1,0 +1,5 @@
+<view class="state" role="status" aria-live="polite">
+  <view class="spinner" aria-hidden="true"></view>
+  <text class="message">{{message}}</text>
+</view>
+

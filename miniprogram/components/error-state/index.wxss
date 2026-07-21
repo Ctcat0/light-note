@@ -1,0 +1,47 @@
+.state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 320rpx;
+  padding: 48rpx;
+  text-align: center;
+}
+
+.symbol {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 64rpx;
+  height: 64rpx;
+  border-radius: 50%;
+  background: #fff0ed;
+  color: #ba3d2f;
+  font-size: 36rpx;
+  font-weight: 700;
+}
+
+.title {
+  margin-top: 24rpx;
+  color: #34383d;
+  font-size: 30rpx;
+  font-weight: 600;
+}
+
+.message {
+  margin-top: 12rpx;
+  color: #858a91;
+  font-size: 26rpx;
+  line-height: 1.6;
+}
+
+.retry-button {
+  margin-top: 28rpx;
+  padding: 0 36rpx;
+  border-radius: 999rpx;
+  background: #2f6f5e;
+  color: #ffffff;
+  font-size: 26rpx;
+  line-height: 72rpx;
+}
+

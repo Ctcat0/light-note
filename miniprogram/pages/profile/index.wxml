@@ -1,0 +1,21 @@
+<view class="page-shell">
+  <view class="page-header">
+    <text class="page-title">我的</text>
+    <text class="page-description">用户设置、隐私和数据管理将在独立任务中实现。</text>
+  </view>
+
+  <view class="page-state-card">
+    <app-loading wx:if="{{viewState === 'loading'}}" message="正在加载设置" />
+    <app-error-state
+      wx:elif="{{viewState === 'error'}}"
+      message="{{errorMessage}}"
+      bind:retry="handleRetry"
+    />
+    <app-empty
+      wx:else
+      title="设置骨架已就绪"
+      description="当前未请求用户资料或其他隐私数据"
+    />
+  </view>
+</view>
+

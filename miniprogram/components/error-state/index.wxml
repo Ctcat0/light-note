@@ -1,0 +1,7 @@
+<view class="state" role="alert">
+  <view class="symbol" aria-hidden="true">!</view>
+  <text class="title">{{title}}</text>
+  <text class="message">{{message}}</text>
+  <button class="retry-button" bindtap="handleRetry">{{retryText}}</button>
+</view>
+

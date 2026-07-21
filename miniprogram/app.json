@@ -1,0 +1,46 @@
+{
+  "pages": [
+    "pages/home/index",
+    "pages/ledger/index",
+    "pages/todo/index",
+    "pages/profile/index"
+  ],
+  "window": {
+    "navigationBarBackgroundColor": "#ffffff",
+    "navigationBarTextStyle": "black",
+    "navigationBarTitleText": "轻记",
+    "backgroundColor": "#f6f7f9",
+    "backgroundTextStyle": "dark"
+  },
+  "tabBar": {
+    "color": "#7a7f87",
+    "selectedColor": "#2f6f5e",
+    "backgroundColor": "#ffffff",
+    "borderStyle": "black",
+    "list": [
+      {
+        "pagePath": "pages/home/index",
+        "text": "首页"
+      },
+      {
+        "pagePath": "pages/ledger/index",
+        "text": "记账"
+      },
+      {
+        "pagePath": "pages/todo/index",
+        "text": "待办"
+      },
+      {
+        "pagePath": "pages/profile/index",
+        "text": "我的"
+      }
+    ]
+  },
+  "usingComponents": {
+    "app-loading": "/components/loading/index",
+    "app-empty": "/components/empty/index",
+    "app-error-state": "/components/error-state/index"
+  },
+  "style": "v2"
+}
+

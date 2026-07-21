@@ -1,0 +1,6 @@
+<view class="state" role="status">
+  <view class="symbol" aria-hidden="true">○</view>
+  <text class="title">{{title}}</text>
+  <text class="description">{{description}}</text>
+</view>
+

@@ -1,0 +1,21 @@
+<view class="page-shell">
+  <view class="page-header">
+    <text class="page-title">首页</text>
+    <text class="page-description">天气、待办和收支摘要将在后续任务中接入。</text>
+  </view>
+
+  <view class="page-state-card">
+    <app-loading wx:if="{{viewState === 'loading'}}" message="正在加载首页" />
+    <app-error-state
+      wx:elif="{{viewState === 'error'}}"
+      message="{{errorMessage}}"
+      bind:retry="handleRetry"
+    />
+    <app-empty
+      wx:else
+      title="首页骨架已就绪"
+      description="当前未加载任何业务数据"
+    />
+  </view>
+</view>
+

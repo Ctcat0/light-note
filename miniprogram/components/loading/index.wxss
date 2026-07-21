@@ -1,0 +1,31 @@
+.state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 320rpx;
+  padding: 48rpx;
+}
+
+.spinner {
+  box-sizing: border-box;
+  width: 48rpx;
+  height: 48rpx;
+  border: 6rpx solid #dce9e5;
+  border-top-color: #2f6f5e;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.message {
+  margin-top: 24rpx;
+  color: #70757d;
+  font-size: 28rpx;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+

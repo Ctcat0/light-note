@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["miniprogram-api-typings"]
+  },
+  "include": [
+    "miniprogram/**/*.ts",
+    "shared/**/*.ts"
+  ],
+  "exclude": ["node_modules"]
+}

@@ -1,0 +1,21 @@
+<view class="page-shell">
+  <view class="page-header">
+    <text class="page-title">待办</text>
+    <text class="page-description">待办新增、列表和完成操作将在独立任务中实现。</text>
+  </view>
+
+  <view class="page-state-card">
+    <app-loading wx:if="{{viewState === 'loading'}}" message="正在加载待办" />
+    <app-error-state
+      wx:elif="{{viewState === 'error'}}"
+      message="{{errorMessage}}"
+      bind:retry="handleRetry"
+    />
+    <app-empty
+      wx:else
+      title="待办骨架已就绪"
+      description="当前未创建待办，也未使用模拟数据"
+    />
+  </view>
+</view>
+
