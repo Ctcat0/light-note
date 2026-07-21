@@ -1,4 +1,5 @@
 {
-  "navigationBarTitleText": "记账"
+  "navigationBarTitleText": "账单流水",
+  "enablePullDownRefresh": true,
+  "onReachBottomDistance": 100
 }
-

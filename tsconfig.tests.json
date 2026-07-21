@@ -6,6 +6,8 @@
   },
   "include": [
     "shared/**/*.ts",
+    "cloudfunctions/user/src/**/*.ts",
+    "cloudfunctions/ledger/src/**/*.ts",
     "tests/**/*.ts"
   ]
 }

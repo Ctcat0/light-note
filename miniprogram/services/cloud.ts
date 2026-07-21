@@ -1,4 +1,7 @@
-import { environment } from "../config/environment";
+import {
+  getCurrentEnvironmentConfig,
+  type EnvironmentConfig,
+} from "../config/environment";
 import {
   API_ERROR_CODES,
   CLIENT_ERROR_CODES,
@@ -16,15 +19,60 @@ export interface CloudInitializationResult {
   errorMessage: string | null;
 }
 
+export interface CloudApi {
+  init(config: { env: string; traceUser: boolean }): void;
+  callFunction(options: {
+    name: string;
+    data: object;
+  }): Promise<{ result?: unknown }>;
+}
+
 export interface CloudCallOptions<TPayload extends object, TData> {
   functionName: string;
   action: string;
   requestId: string;
   payload: TPayload;
   parseData: (value: unknown) => TData;
+  timeoutMs?: number;
+  cloudApi?: CloudApi;
+}
+
+export interface CloudCallResult<TData> {
+  data: TData;
+  requestId: string;
+  serverTime: string;
 }
 
 let isCloudInitialized = false;
+
+function callWithTimeout<TValue>(
+  operation: Promise<TValue>,
+  timeoutMs: number,
+  requestId: string,
+): Promise<TValue> {
+  return new Promise<TValue>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(
+        new AppError(
+          CLIENT_ERROR_CODES.NETWORK_ERROR,
+          "云函数调用超时，请稍后重试",
+          requestId,
+        ),
+      );
+    }, timeoutMs);
+
+    void operation.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error: unknown) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
 
 function isApiErrorCode(value: unknown): value is ApiErrorCode {
   return (
@@ -33,7 +81,7 @@ function isApiErrorCode(value: unknown): value is ApiErrorCode {
   );
 }
 
-function parseApiResponse(value: unknown): ApiResponse<unknown> {
+export function parseApiResponse(value: unknown): ApiResponse<unknown> {
   if (
     !isRecord(value) ||
     typeof value.success !== "boolean" ||
@@ -85,17 +133,20 @@ function parseApiResponse(value: unknown): ApiResponse<unknown> {
   };
 }
 
-export function initializeCloud(): CloudInitializationResult {
-  if (!environment.enableCloud || environment.cloudEnvId.trim().length === 0) {
+export function initializeCloud(
+  config: EnvironmentConfig = getCurrentEnvironmentConfig(),
+  cloudApi: CloudApi = wx.cloud,
+): CloudInitializationResult {
+  if (!config.enableCloud || config.cloudEnvId.trim().length === 0) {
     return {
       ready: false,
-      errorMessage: "CloudBase 开发环境尚未配置",
+      errorMessage: `CloudBase ${config.name} 环境尚未配置`,
     };
   }
 
   try {
-    wx.cloud.init({
-      env: environment.cloudEnvId,
+    cloudApi.init({
+      env: config.cloudEnvId,
       traceUser: true,
     });
     isCloudInitialized = true;
@@ -130,6 +181,17 @@ function ensureCloudIsReady(): void {
 export async function callCloudFunction<TPayload extends object, TData>(
   options: CloudCallOptions<TPayload, TData>,
 ): Promise<TData> {
+  const result = await callCloudFunctionWithMetadata(options);
+
+  return result.data;
+}
+
+export async function callCloudFunctionWithMetadata<
+  TPayload extends object,
+  TData,
+>(
+  options: CloudCallOptions<TPayload, TData>,
+): Promise<CloudCallResult<TData>> {
   ensureCloudIsReady();
 
   const request: CloudFunctionRequest<TPayload> = {
@@ -139,17 +201,26 @@ export async function callCloudFunction<TPayload extends object, TData>(
   };
 
   try {
-    const response = await wx.cloud.callFunction({
-      name: options.functionName,
-      data: request,
-    });
+    const cloudApi = options.cloudApi ?? wx.cloud;
+    const response = await callWithTimeout(
+      cloudApi.callFunction({
+        name: options.functionName,
+        data: request,
+      }),
+      options.timeoutMs ?? 15_000,
+      options.requestId,
+    );
     const result = parseApiResponse(response.result);
 
     if (!result.success) {
       throw new AppError(result.code, result.message, result.requestId);
     }
 
-    return options.parseData(result.data);
+    return {
+      data: options.parseData(result.data),
+      requestId: result.requestId,
+      serverTime: result.serverTime,
+    };
   } catch (error) {
     throw normalizeError(
       error,

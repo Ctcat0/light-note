@@ -1,21 +1,70 @@
-<view class="page-shell">
+<view class="page-shell home-page">
   <view class="page-header">
     <text class="page-title">首页</text>
-    <text class="page-description">天气、待办和收支摘要将在后续任务中接入。</text>
+    <text class="page-description">先聚合本月收支，天气和待办将在后续任务接入。</text>
   </view>
 
-  <view class="page-state-card">
-    <app-loading wx:if="{{viewState === 'loading'}}" message="正在加载首页" />
+  <view class="page-state-card" wx:if="{{viewState === 'loading'}}">
+    <app-loading message="正在加载本月收支" />
+  </view>
+
+  <view class="page-state-card" wx:elif="{{viewState === 'error'}}">
     <app-error-state
-      wx:elif="{{viewState === 'error'}}"
+      title="本月收支加载失败"
       message="{{errorMessage}}"
       bind:retry="handleRetry"
     />
-    <app-empty
-      wx:else
-      title="首页骨架已就绪"
-      description="当前未加载任何业务数据"
-    />
+    <view wx:if="{{diagnosticsEnabled}}" class="diagnostic-meta">
+      <text>错误码：{{errorCode}}</text>
+      <text>requestId：{{requestId || '未返回'}}</text>
+    </view>
+  </view>
+
+  <block wx:else>
+    <view class="summary-card">
+      <view class="summary-header">
+        <view>
+          <text class="summary-caption">{{monthLabel}}结余</text>
+          <text class="balance-amount">{{monthBalanceDisplay}}</text>
+        </view>
+        <button class="ledger-link" bindtap="handleOpenLedger">查看流水</button>
+      </view>
+      <view class="summary-grid">
+        <view class="summary-item income">
+          <text class="summary-item-label">本月收入</text>
+          <text class="summary-item-value">{{monthIncomeDisplay}}</text>
+        </view>
+        <view class="summary-item expense">
+          <text class="summary-item-label">本月支出</text>
+          <text class="summary-item-value">{{monthExpenseDisplay}}</text>
+        </view>
+      </view>
+    </view>
+
+    <view class="quick-actions">
+      <button class="quick-button expense" bindtap="handleAddExpense">记支出</button>
+      <button class="quick-button income" bindtap="handleAddIncome">记收入</button>
+    </view>
+
+    <view class="empty-card" wx:if="{{viewState === 'empty'}}">
+      <app-empty
+        title="{{monthLabel}}暂无收支"
+        description="记录第一笔收入或支出后，首页会自动更新汇总"
+      />
+    </view>
+  </block>
+
+  <view wx:if="{{diagnosticsEnabled && identityAvailable}}" class="diagnostic-panel">
+    <text class="diagnostic-title">开发环境 · 用户初始化诊断</text>
+    <view class="diagnostic-row"><text>微信身份</text><text>已获取</text></view>
+    <view class="diagnostic-row"><text>新建用户</text><text>{{userCreated ? '是' : '否'}}</text></view>
+    <view class="diagnostic-row"><text>新建支出分类</text><text>{{expenseCategoriesCreated}}</text></view>
+    <view class="diagnostic-row"><text>新建收入分类</text><text>{{incomeCategoriesCreated}}</text></view>
+    <view class="diagnostic-row"><text>新建账户</text><text>{{accountsCreated}}</text></view>
+    <view class="diagnostic-row"><text>默认账户</text><text>{{defaultAccountConfigured ? '已设置' : '未设置'}}</text></view>
+    <view class="diagnostic-row"><text>重复初始化</text><text>{{repeatedInitialization ? '是' : '否'}}</text></view>
+    <view class="diagnostic-row"><text>错误码</text><text>{{errorCode}}</text></view>
+    <view class="diagnostic-request"><text>requestId：{{requestId}}</text></view>
+    <text class="diagnostic-note">诊断仅在开发版显示，不包含 OPENID。</text>
   </view>
 </view>
-

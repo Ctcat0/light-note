@@ -6,7 +6,13 @@ export default tseslint.config(
   },
   ...tseslint.configs.recommended,
   {
-    files: ["miniprogram/**/*.ts", "shared/**/*.ts", "tests/**/*.ts"],
+    files: [
+      "miniprogram/**/*.ts",
+      "shared/**/*.ts",
+      "cloudfunctions/user/src/**/*.ts",
+      "cloudfunctions/ledger/src/**/*.ts",
+      "tests/**/*.ts"
+    ],
     rules: {
       "@typescript-eslint/consistent-type-imports": "error",
       "@typescript-eslint/no-explicit-any": "error",
@@ -17,4 +23,3 @@ export default tseslint.config(
     }
   }
 );
-

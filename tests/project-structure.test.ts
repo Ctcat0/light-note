@@ -19,6 +19,11 @@ interface ProjectConfiguration {
   };
 }
 
+interface CloudFunctionPackage {
+  main: string;
+  dependencies: Record<string, string>;
+}
+
 const workspaceRoot = resolve(import.meta.dirname, "..");
 
 function readJsonFile<T>(relativePath: string): T {
@@ -37,7 +42,7 @@ function collectFiles(directory: string): string[] {
   });
 }
 
-test("app.json 注册四个一级页面和底部导航", () => {
+test("app.json 注册四个一级页面、支出新增/编辑页和底部导航", () => {
   const config = readJsonFile<AppConfiguration>("miniprogram/app.json");
   const expectedPages = [
     "pages/home/index",
@@ -46,7 +51,14 @@ test("app.json 注册四个一级页面和底部导航", () => {
     "pages/profile/index",
   ];
 
-  assert.deepEqual(config.pages, expectedPages);
+  assert.deepEqual(config.pages, [
+    "pages/home/index",
+    "pages/ledger/index",
+    "pages/transaction-create/index",
+    "pages/transaction-edit/index",
+    "pages/todo/index",
+    "pages/profile/index",
+  ]);
   assert.deepEqual(
     config.tabBar.list.map((item) => item.pagePath),
     expectedPages,
@@ -122,4 +134,91 @@ test("小程序前端不直连数据库且不包含常见密钥赋值", () => {
       assert.doesNotMatch(content, pattern, sourceFile);
     }
   }
+});
+
+test("用户和记账云函数部署入口与依赖位于独立函数目录", () => {
+  for (const functionName of ["user", "ledger"]) {
+    const functionPackage = readJsonFile<CloudFunctionPackage>(
+      `cloudfunctions/${functionName}/package.json`,
+    );
+    const entry = readFileSync(
+      join(workspaceRoot, "cloudfunctions", functionName, "index.js"),
+      "utf8",
+    );
+
+    assert.equal(functionPackage.main, "index.js");
+    assert.equal(functionPackage.dependencies["wx-server-sdk"], "3.0.1");
+    assert.match(
+      entry,
+      new RegExp(`require\\(\"\\.\\/dist\\/cloudfunctions\\/${functionName}\\/src\\/index\\.js\"\\)`),
+    );
+    assert.doesNotMatch(entry, /[A-Za-z]:\\/u);
+  }
+});
+
+test("流水页和收支新增/编辑页只通过 ledger service 访问数据", () => {
+  const page = readFileSync(
+    join(workspaceRoot, "miniprogram", "pages", "ledger", "index.ts"),
+    "utf8",
+  );
+  assert.match(page, /ledgerService\.listTransactions/);
+  assert.match(page, /selectedType/);
+  assert.match(page, /loadingMore/);
+  assert.match(page, /requestVersion/);
+  assert.doesNotMatch(page, /wx\.cloud\.(?:database|callFunction)/);
+
+  const createPage = readFileSync(
+    join(workspaceRoot, "miniprogram", "pages", "transaction-create", "index.ts"),
+    "utf8",
+  );
+  assert.match(createPage, /ledgerService\.createTransaction/);
+  assert.match(createPage, /listCategories/);
+  assert.match(createPage, /ledgerService\.getTransaction/);
+  assert.match(createPage, /submitting/);
+  assert.match(createPage, /requestId/);
+  assert.doesNotMatch(createPage, /wx\.cloud\.(?:database|callFunction)/);
+
+  const editPage = readFileSync(
+    join(workspaceRoot, "miniprogram", "pages", "transaction-edit", "index.ts"),
+    "utf8",
+  );
+  assert.match(editPage, /ledgerService\.getTransaction/);
+  assert.match(editPage, /ledgerService\.updateTransaction/);
+  assert.match(editPage, /ledgerService\.deleteTransaction/);
+  assert.match(editPage, /expectedVersion/);
+  assert.match(editPage, /requestId/);
+  assert.doesNotMatch(editPage, /wx\.cloud\.(?:database|callFunction)/);
+});
+
+test("首页通过独立月度汇总接口展示收支摘要和完整异步状态", () => {
+  const page = readFileSync(
+    join(workspaceRoot, "miniprogram", "pages", "home", "index.ts"),
+    "utf8",
+  );
+  const template = readFileSync(
+    join(workspaceRoot, "miniprogram", "pages", "home", "index.wxml"),
+    "utf8",
+  );
+  assert.match(page, /ledgerService\.getMonthlySummary/);
+  assert.match(page, /monthIncomeInCents/);
+  assert.match(page, /monthExpenseInCents/);
+  assert.match(page, /monthBalanceInCents/);
+  assert.match(template, /viewState === 'loading'/);
+  assert.match(template, /viewState === 'error'/);
+  assert.match(template, /viewState === 'empty'/);
+  assert.match(page, /type=expense/);
+  assert.match(page, /type=income/);
+  assert.doesNotMatch(page, /wx\.cloud\.(?:database|callFunction)/);
+});
+
+test("本地环境配置和云函数构建产物不会进入 Git", () => {
+  const gitignore = readFileSync(join(workspaceRoot, ".gitignore"), "utf8");
+
+  assert.match(gitignore, /^\.env\.\*$/mu);
+  assert.match(gitignore, /^!\.env\.example$/mu);
+  assert.match(
+    gitignore,
+    /^miniprogram\/config\/environment\.runtime\.ts$/mu,
+  );
+  assert.match(gitignore, /^cloudfunctions\/\*\*\/dist\/$/mu);
 });

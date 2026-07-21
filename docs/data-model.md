@@ -12,6 +12,7 @@
 - `ownerId`、`openId`、审计时间、`version` 和删除状态只能由云函数写入。
 - 业务集合只允许云函数读写；客户端数据库权限规则默认拒绝。
 - 引用字段（如 `accountId`、`categoryId`、`listId`）必须在写入时验证被引用记录属于相同 `ownerId`。
+- `categories` 和 `accounts` 的 `systemKey` 是不可由用户修改的稳定键；系统默认项使用固定模板键，自定义项使用创建请求生成的唯一键，不能依赖可修改名称判断默认项。
 
 ### 1.2 金额
 
@@ -58,8 +59,8 @@ erDiagram
 | --- | --- | --- | --- |
 | `_id` | String | 是 | 内部用户 ID |
 | `openId` | String | 是 | 来自 `getWXContext().OPENID`，唯一、不可返回前端 |
-| `nickname` | String | 否 | 0–40 字，用户主动授权/填写后保存 |
-| `avatarUrl` | String | 否 | 仅接受允许的 HTTPS 或云存储地址 |
+| `nickname` | String \| null | 是 | 默认 `null`；0–40 字，用户主动授权/填写后保存 |
+| `avatarUrl` | String \| null | 是 | 默认 `null`；仅接受允许的 HTTPS 或云存储地址 |
 | `status` | String | 是 | `active \| disabled \| deletion_pending \| deleted` |
 | `createdAt` | Date | 是 | 服务端创建时间 |
 | `updatedAt` | Date | 是 | 服务端更新时间 |
@@ -90,6 +91,7 @@ erDiagram
 | `showWeather` | Boolean | 是 | 默认 `true` |
 | `showBudget` | Boolean | 是 | 仅启用基础预算功能时可为 `true` |
 | `theme` | String | 是 | `system \| light \| dark` |
+| `initializationVersion` | Number | 是 | 当前为 `1`；区分未完成初始化与用户主动清空默认设置 |
 | `createdAt` | Date | 是 | 服务端生成 |
 | `updatedAt` | Date | 是 | 服务端生成 |
 | `version` | Number | 是 | 初始 1 |
@@ -120,10 +122,12 @@ interface DefaultLocation {
 | --- | --- | --- | --- |
 | `_id` | String | 是 | 账户 ID |
 | `ownerId` | String | 是 | 所属用户 |
+| `systemKey` | String | 是 | 系统项如 `account_wechat`；自定义项使用唯一生成键，不可修改 |
 | `name` | String | 是 | 去首尾空格后 1–30 字 |
 | `type` | String | 是 | `cash \| wechat \| alipay \| bank \| other` |
 | `icon` | String | 否 | 受控图标标识，不保存任意脚本/HTML |
 | `sortOrder` | Number | 是 | 非负安全整数 |
+| `isSystem` | Boolean | 是 | 初始化模板生成的账户为 `true` |
 | `isEnabled` | Boolean | 是 | 被历史账单引用时只停用不物理删除 |
 | `createdAt` | Date | 是 | 服务端生成 |
 | `updatedAt` | Date | 是 | 服务端生成 |
@@ -134,6 +138,7 @@ interface DefaultLocation {
 | 名称 | 字段（顺序） | 属性 | 用途 |
 | --- | --- | --- | --- |
 | `idx_accounts_owner_enabled_sort` | `ownerId`, `isEnabled`, `sortOrder` | 普通 | 账户列表 |
+| `uq_accounts_owner_system_key` | `ownerId`, `systemKey` | 唯一 | 默认账户初始化与并发幂等 |
 
 同名账户是否允许尚未确认，因此不设置名称唯一索引。默认账户的唯一事实源是 `user_settings.defaultAccountId`；账户列表中的“默认”状态在读取时派生，不在 `accounts` 重复存储。停用当前默认账户前必须在事务或等价的可恢复流程中先指定另一个有效账户。
 
@@ -146,6 +151,7 @@ interface DefaultLocation {
 | `_id` | String | 是 | 分类 ID |
 | `ownerId` | String | 是 | 所属用户 |
 | `type` | String | 是 | `expense \| income` |
+| `systemKey` | String | 是 | 如 `expense_food`、`income_salary`；自定义项使用唯一生成键，不可修改 |
 | `name` | String | 是 | 去首尾空格后 1–20 字 |
 | `icon` | String | 是 | 受控图标标识 |
 | `sortOrder` | Number | 是 | 非负安全整数 |
@@ -160,6 +166,7 @@ interface DefaultLocation {
 | 名称 | 字段（顺序） | 属性 | 用途 |
 | --- | --- | --- | --- |
 | `idx_categories_owner_type_enabled_sort` | `ownerId`, `type`, `isEnabled`, `sortOrder` | 普通 | 分类选择列表 |
+| `uq_categories_owner_type_system_key` | `ownerId`, `type`, `systemKey` | 唯一 | 默认分类初始化与并发幂等 |
 
 分类名先由业务校验在同一用户、同一类型内避免重复；是否建立唯一索引要等产品确认大小写和空格归一化规则。
 
@@ -172,17 +179,23 @@ interface DefaultLocation {
 | `_id` | String | 是 | 账单 ID |
 | `ownerId` | String | 是 | 所属用户 |
 | `type` | String | 是 | `expense \| income` |
-| `amountInCents` | Number | 是 | 正的安全整数，单位分 |
+| `amountInCents` | Number | 是 | 正的安全整数，单位分；单笔不超过 `9,999,999,999` 分 |
 | `categoryId` | String | 是 | 本人、启用且类型匹配的分类 |
 | `accountId` | String | 是 | 本人且启用的账户 |
 | `occurredAt` | Date | 是 | 业务发生的具体时刻 |
 | `occurredDateKey` | String | 是 | 服务端按用户时区派生的 `YYYY-MM-DD` |
-| `merchant` | String \| null | 是 | 最长值待确认，空值统一为 `null` |
-| `note` | String \| null | 是 | 最长值待确认，空值统一为 `null` |
-| `includeInBudget` | Boolean | 是 | 仅支出影响预算，默认 `true` |
+| `merchant` | String \| null | 是 | 当前新增支出固定为 `null`，后续商家功能另行开放 |
+| `note` | String \| null | 是 | 去首尾空格，最长 200 字；空值统一为 `null` |
+| `tags` | String[] | 是 | 当前固定为空数组，不开放标签写入 |
+| `attachmentUrls` | String[] | 是 | 当前固定为空数组，不开放凭证上传 |
+| `includeInBudget` | Boolean | 是 | 仅支出影响预算；支出固定 `true`，收入固定 `false` |
 | `requestId` | String | 是 | 创建幂等键，所属用户范围内唯一 |
 | `isDeleted` | Boolean | 是 | 默认 `false` |
 | `deletedAt` | Date \| null | 是 | 删除时由服务端写入 |
+| `lastMutationRequestId` | String | 否 | 最近一次成功编辑或删除的 UUID，用于单账单幂等重试 |
+| `lastMutationKind` | String | 否 | `update \| delete` |
+| `lastMutationFingerprint` | String | 否 | 服务端对规范化变更请求计算的 SHA-256，不保存明文备注副本 |
+| `lastMutationPreviousOccurredAt` | Date | 否 | 最近变更前发生时间，用于重试响应和跨月刷新 |
 | `createdAt` | Date | 是 | 服务端生成 |
 | `updatedAt` | Date | 是 | 服务端生成 |
 | `version` | Number | 是 | 初始 1 |
@@ -192,12 +205,15 @@ interface DefaultLocation {
 | 名称 | 字段（顺序） | 属性 | 用途 |
 | --- | --- | --- | --- |
 | `uq_transactions_owner_request` | `ownerId`, `requestId` | 唯一 | 创建幂等 |
-| `idx_transactions_owner_active_time` | `ownerId`, `isDeleted`, `occurredAt`（降序） | 普通 | 默认流水、日期范围与游标分页 |
-| `idx_transactions_owner_type_time` | `ownerId`, `isDeleted`, `type`, `occurredAt`（降序） | 普通 | 收支筛选与汇总 |
+| `idx_transactions_owner_type_active_occurred_id` | `ownerId`（升序）, `type`（升序）, `isDeleted`（升序）, `occurredAt`（降序）, `_id`（降序） | 普通 | 指定月份收支流水、稳定游标分页与月度汇总 |
 | `idx_transactions_owner_category_time` | `ownerId`, `isDeleted`, `categoryId`, `occurredAt`（降序） | 普通 | 分类筛选/统计 |
 | `idx_transactions_owner_account_time` | `ownerId`, `isDeleted`, `accountId`, `occurredAt`（降序） | 普通 | 账户筛选 |
 
-所有统计排除 `isDeleted = true`。列表使用 `(occurredAt, _id)` 稳定游标，避免 offset 深分页。
+所有统计排除 `isDeleted = true`。当前流水查询必须指定 `type = expense | income`，并固定 `isDeleted = false`，按用户当前 `user_settings.timezone` 计算 `monthStart <= occurredAt < nextMonthStart`，使用 `(occurredAt DESC, _id DESC)` 稳定游标，避免 offset 深分页。列表 DTO 的 `occurredDateKey` 也按查询时的当前时区重新派生，因此修改时区后不会依赖写入时的旧日期键。
+
+收入和支出编辑、删除均按 `_id` 在 CloudBase 事务内读取单文档，再校验可信 `ownerId`、记录原类型、`isDeleted` 和 `version`。编辑仅更新金额、分类、账户、发生时间、日期键、备注、`updatedAt` 与版本，分类必须与记录原类型匹配；删除设置 `isDeleted=true`、`deletedAt`、`updatedAt` 与新版本，数据库文档不会物理移除。API 的 `status=active/deleted` 由 `isDeleted` 派生，避免保存两套可能冲突的状态事实。该单文档事务不需要新增复合索引。
+
+`uq_transactions_owner_request` 与 `idx_transactions_owner_type_active_occurred_id` 都是当前收支创建和流水闭环的部署必需索引，需在每个 CloudBase 环境的控制台手工创建；代码不会自动创建索引。分类和账户展示采用按本页引用 ID 批量关联当前记录的方案，不保存名称快照：分类或账户改名会同步反映到历史流水；关联记录意外缺失时只显示“未知分类/未知账户”，不会暴露其他用户记录。交易 `_id` 同时由 `ownerId + requestId` 确定性生成，并在服务端事务中先读后写；唯一索引仍是上线必需的数据完整性防线。
 
 ## 8. `budgets`：基础月预算
 
@@ -323,13 +339,12 @@ MVP 不包含 `reminderAt`、`repeatRule`、`tags`、`isOutdoor`；这些字段�
 `user.init` 必须可幂等执行：
 
 1. 按可信 `openId` 获取或创建 `users`；
-2. 创建唯一 `user_settings`；
-3. 创建默认账户，并将其 ID 写入设置；
-4. 按收入/支出模板复制一组该用户私有分类；
-5. 创建默认待办清单；
-6. 更新 `lastLoginAt`，返回安全用户摘要和设置。
+2. 按稳定 `systemKey` 补齐 11 个支出分类和 8 个收入分类；
+3. 按稳定 `systemKey` 补齐 5 个默认账户；
+4. 创建唯一 `user_settings`，首次初始化将微信账户 ID 写入 `defaultAccountId`；
+5. 更新 `lastLoginAt`，返回安全用户摘要、设置和本次实际创建数量。
 
-并发首次调用需依赖 `openId` 唯一索引处理重复创建，失败后可安全重试并补齐缺失默认数据。
+初始化文档 ID 由可信身份和稳定键确定，全部写入在服务端事务内完成；唯一索引作为第二道并发保护。重复调用只补齐缺失项，不覆盖名称、启用状态或用户已经选择的默认账户。默认待办清单由后续待办域任务实现，本次初始化不创建待办数据。
 
 ### 12.2 用户删除
 
@@ -343,7 +358,7 @@ MVP 不包含 `reminderAt`、`repeatRule`、`tags`、`isOutdoor`；这些字段�
 
 ## 13. 数据模型待定项
 
-1. 单笔金额、预算金额、备注、描述和商户字段的确切长度上限；
+1. 预算金额、待办描述和未来商户字段的确切长度上限；支出单笔上限与备注长度本次已确定；
 2. 同类型分类名和账户名是否区分大小写、是否允许重复；
 3. 基础预算是否进入首发 MVP；
 4. 个人数据删除冷静期、软删除保留期和物理清理周期；

@@ -116,7 +116,7 @@ interface UserSettingsDto {
 
 ### 3.2 `init`
 
-用途：首次初始化或恢复会话；必须幂等补齐默认设置、账户、分类和待办清单。
+用途：首次初始化或恢复会话；必须幂等补齐默认设置、账户和分类，不创建待办数据。
 
 请求：
 
@@ -131,8 +131,18 @@ interface InitResult {
   isNewUser: boolean;
   user: UserSummaryDto;
   settings: UserSettingsDto;
+  initialization: {
+    userCreated: boolean;
+    expenseCategoriesCreated: number;
+    incomeCategoriesCreated: number;
+    accountsCreated: number;
+    repeatedInitialization: boolean;
+    completed: boolean;
+  };
 }
 ```
+
+首次成功调用应分别创建 11 个支出分类、8 个收入分类和 5 个账户；微信账户成为新用户默认账户。完整重复调用的各创建数量为 `0`，并返回 `repeatedInitialization = true`；部分缺失补齐时该值为 `false`。接口只补齐按稳定 `systemKey` 缺失的系统项，不按中文名称匹配，不覆盖已修改名称、停用状态或现有默认账户。
 
 ### 3.3 `getSettings`
 
@@ -193,7 +203,10 @@ interface TransactionDto {
   occurredDateKey: DateKey;
   merchant: string | null;
   note: string | null;
+  tags: string[];
+  attachmentUrls: string[];
   includeInBudget: boolean;
+  status: "active" | "deleted"; // 由 isDeleted 派生，不是数据库重复字段
   version: number;
   createdAt: IsoDateTime;
   updatedAt: IsoDateTime;
@@ -213,28 +226,140 @@ interface TransactionWriteFields {
 
 服务端校验 `amountInCents` 为正的安全整数；`categoryId` 的类型必须与 `type` 匹配；`occurredDateKey` 由服务端派生，客户端不得提交。
 
+当前实现开放收入和支出创建。`merchant` 固定为 `null`，`includeInBudget` 由类型决定：支出为 `true`、收入为 `false`；服务端生成空 `tags` 和 `attachmentUrls`。转账、标签和附件没有可调用的写入逻辑。
+
 ### 4.2 账单 actions
 
 | action | payload | data | 关键规则 |
 | --- | --- | --- | --- |
-| `createTransaction` | `TransactionWriteFields` | `TransactionDto` | 顶层 `requestId` 作为创建幂等键；重复请求返回原记录 |
-| `getTransaction` | `{ transactionId: string }` | `TransactionDto` | 仅本人、未删除记录 |
-| `updateTransaction` | `{ transactionId: string; expectedVersion: number; changes: Partial<TransactionWriteFields> }` | `TransactionDto` | 至少一个允许字段；重新校验引用与派生日期 |
-| `deleteTransaction` | `{ transactionId: string; expectedVersion: number }` | `{ transactionId: string; deletedAt: IsoDateTime; version: number }` | 逻辑删除；重复删除返回 `RESOURCE_NOT_FOUND` |
-| `listTransactions` | `ListTransactionsPayload` | `PageResult<TransactionDto>` | 稳定游标分页，只返回未删除记录 |
-| `getMonthlySummary` | `{ monthKey: MonthKey }` | `MonthlySummaryDto` | 按用户时区计算半开时间区间 |
+| `createTransaction` | `CreateTransactionPayload` | `CreateTransactionResult` | 接受 `expense \| income`；顶层 `requestId` 作为创建幂等键，重复请求返回原记录 |
+| `getTransaction` | `{ transactionId: string }` | `{ transaction: TransactionDto }` | 仅本人、未删除记录，用于新增后的精确写入确认 |
+| `updateTransaction` | `UpdateTransactionRequest` | `UpdateTransactionResult` | 编辑收入或支出；类型不可变；校验版本、引用归属与派生日期；同请求重试幂等 |
+| `deleteTransaction` | `DeleteTransactionRequest` | `DeleteTransactionResult` | 逻辑删除收入或支出；同请求重试返回等效成功，不同请求重复删除返回 `TRANSACTION_ALREADY_DELETED` |
+| `listTransactions` | `ListTransactionsPayload` | `ListTransactionsResult` | 按收入或支出类型查询指定月份、当前用户、未删除记录，稳定游标分页并返回全月收支汇总 |
+| `getMonthlySummary` | `GetMonthlySummaryPayload` | `GetMonthlySummaryResult` | 已实现；按用户时区汇总指定月份收入、支出和结余，不含预算与分类统计 |
+
+本次已实现的最小契约：
 
 ```ts
-interface ListTransactionsPayload {
-  monthKey?: MonthKey;
-  type?: TransactionType;
-  categoryId?: string;
-  accountId?: string;
-  cursor?: string | null;
-  limit?: number;
+interface CreateTransactionPayload {
+  type: "expense" | "income";
+  amountInCents: number;
+  categoryId: string;
+  accountId: string;
+  occurredAt: IsoDateTime;
+  note: string | null;
+  merchant: null;
+  includeInBudget: boolean; // expense=true，income=false
 }
 
-interface MonthlySummaryDto {
+interface CreateTransactionResult {
+  transaction: TransactionDto;
+  created: boolean;
+  duplicate: boolean;
+}
+```
+
+`createTransaction` 拒绝无效类型、类型与分类不匹配、`includeInBudget` 与类型不匹配以及任何未允许字段。相同用户、相同 `requestId` 再次请求返回 `created = false`、`duplicate = true`；不同用户可使用相同 `requestId`。收入和支出编辑、逻辑删除沿用同一 `ledger` 云函数。
+
+```ts
+interface UpdateTransactionRequest {
+  transactionId: string;
+  amountInCents: number;
+  categoryId: string;
+  accountId: string;
+  occurredAt: IsoDateTime;
+  note: string | null;
+  expectedVersion: number;
+}
+
+interface UpdateTransactionResult {
+  transaction: TransactionDto;
+  updated: true;
+  duplicate: boolean;
+  previousOccurredAt: IsoDateTime;
+}
+
+interface DeleteTransactionRequest {
+  transactionId: string;
+  expectedVersion: number;
+}
+
+interface DeleteTransactionResult {
+  transactionId: string;
+  deleted: true;
+  alreadyDeleted: boolean;
+  previousOccurredAt: IsoDateTime;
+  version: number;
+  updatedAt: IsoDateTime;
+}
+```
+
+两个 action 的 `requestId` 均位于统一请求信封，不放入 payload。服务端只接受上列字段，身份来自 `getWXContext()`；编辑请求不携带可信 `type`，不能改变 `ownerId`、`type`、创建 requestId、`createdAt` 或删除状态。事务读取账单后校验本人、支持的账单类型、`isDeleted=false` 和 `expectedVersion`，再按记录原类型校验分类、账户归属及启用状态。冲突返回 `TRANSACTION_CONFLICT`，不会覆盖新版本。
+
+每次成功变更在交易记录中保存最近一次变更的 requestId、操作类型、请求指纹和变更前发生时间。同一账单、同一 requestId、同一 payload 重试返回等效成功；同一 requestId 改变 payload 返回 `DUPLICATE_REQUEST`。不同 requestId 删除已删除记录返回 `TRANSACTION_ALREADY_DELETED`。普通 `getTransaction` 将已删除记录视为不存在。
+
+```ts
+type TransactionCursor = string; // 客户端视为不透明字符串
+
+interface ListTransactionsPayload {
+  type: "expense" | "income";
+  year: number;       // 1000–9999 的四位整数
+  month: number;      // 1–12
+  pageSize: number;   // 1–50，页面默认 20
+  cursor: TransactionCursor | null;
+}
+
+interface TransactionListItem {
+  transactionId: string;
+  type: "expense" | "income";
+  amountInCents: number;
+  categoryId: string;
+  categoryName: string;
+  categoryIcon: string;
+  accountId: string;
+  accountName: string;
+  accountIcon: string | null;
+  occurredAt: IsoDateTime;
+  occurredDateKey: DateKey;
+  note: string | null;
+  status: "active";
+  createdAt: IsoDateTime;
+}
+
+interface ListTransactionsResult {
+  items: TransactionListItem[];
+  pagination: {
+    pageSize: number;
+    nextCursor: TransactionCursor | null;
+    hasMore: boolean;
+  };
+  summary: {
+    year: number;
+    month: number;
+    monthExpenseInCents: number;
+    monthIncomeInCents: number;
+    monthBalanceInCents: number;
+  };
+}
+
+interface GetMonthlySummaryPayload {
+  year: number;
+  month: number;
+}
+
+interface GetMonthlySummaryResult {
+  summary: {
+    year: number;
+    month: number;
+    monthIncomeInCents: number;
+    monthExpenseInCents: number;
+    monthBalanceInCents: number;
+  };
+}
+
+// 以下完整统计结构仍是后续设计，不属于当前 getMonthlySummary 响应。
+interface PlannedMonthlySummaryDto {
   monthKey: MonthKey;
   incomeInCents: number;
   expenseInCents: number;
@@ -254,6 +379,14 @@ interface MonthlySummaryDto {
   calculatedAt: IsoDateTime;
 }
 ```
+
+`listTransactions` 必须接受一个 `type` 筛选，但不接受任意起止时间或身份字段。云函数从可信上下文解析当前 `ownerId`，按用户设置时区计算月份半开区间，并查询 `ownerId + type + isDeleted=false`。排序为 `occurredAt DESC, _id DESC`；查询 `pageSize + 1` 条判断 `hasMore`。游标是 Base64URL 编码的严格版本化对象，包含版本、类型、年月、`occurredAt` 和 `transactionId`；服务端校验字段集合、ID 格式、类型与月份绑定和时间范围，非法、跨类型或跨月游标返回 `INVALID_CURSOR`。游标不是授权凭证，所有查询仍重新附加当前用户条件。
+
+`summary.monthExpenseInCents` 与 `summary.monthIncomeInCents` 由同一云函数分别针对整月匹配集合执行聚合求和，`monthBalanceInCents = monthIncomeInCents - monthExpenseInCents`，均与当前页条数无关；空月份为 `0`。分类和账户信息按本页去重后的 ID 分成最多 10 个 ID 的批次查询，并同时限制当前 `ownerId`，避免逐条 N+1。当前采用“关联最新名称”语义，不保存或返回名称快照。
+
+`getMonthlySummary` 复用上述聚合逻辑，但请求只接受 `year` 和 `month`，不接受 `type`、`ownerId`、`userId` 或 `openId`。云函数从可信调用上下文解析当前用户，以 `user_settings.timezone` 计算月份半开区间；收入和支出分别过滤 `isDeleted = false` 后求和。空月份返回三个 `0`，聚合失败返回 `TRANSACTION_SUMMARY_FAILED`。当前接口不返回预算、分类明细、账户余额或浮点比例。
+
+列表输入错误分别返回 `INVALID_YEAR`、`INVALID_MONTH`、`INVALID_PAGE_SIZE`、`INVALID_CURSOR`；列表、展示关联和汇总依赖失败分别映射为 `TRANSACTION_LIST_FAILED` 或 `TRANSACTION_SUMMARY_FAILED`。项目现有未登录错误码为 `UNAUTHENTICATED`，等价于需求草案中的 `UNAUTHORIZED`，不另建含义重复的第二套代码。
 
 `usageBasisPoints` 使用整数万分比；例如 70.25% 返回 `7025`。预算为 0 不允许保存，因此不存在除零语义。
 
@@ -290,6 +423,7 @@ interface AccountDto {
   icon: string | null;
   sortOrder: number;
   isDefault: boolean; // 由 user_settings.defaultAccountId 派生，不是 accounts 存储字段
+  isSystem: boolean;
   isEnabled: boolean;
   version: number;
 }
@@ -537,7 +671,7 @@ interface HomeOverviewResult {
     monthIncomeInCents: number;
     monthExpenseInCents: number;
     monthBalanceInCents: number;
-    budget: MonthlySummaryDto["budget"];
+    budget: PlannedMonthlySummaryDto["budget"];
   }>;
   todos: ModuleResult<{
     todayTotal: number;
@@ -559,7 +693,19 @@ interface HomeOverviewResult {
 | --- | --- | --- |
 | `INVALID_ARGUMENT` | action、字段、格式、范围或组合非法 | 标记相关输入，不自动重试 |
 | `UNAUTHENTICATED` | 无法取得有效微信身份/用户 | 重新初始化；仍失败则提示 |
+| `USER_NOT_INITIALIZED` | 当前身份尚未完成用户初始化 | 先调用 `user.init`，不要继续写入 |
 | `USER_DISABLED` | 用户禁用或待删除 | 阻止业务写入并进入说明页 |
+| `INVALID_AMOUNT` | 金额不是允许范围内的正整数分 | 标记金额输入，不重试 |
+| `CATEGORY_REQUIRED` / `ACCOUNT_REQUIRED` | 未选择必需的分类或账户 | 标记表单字段 |
+| `CATEGORY_NOT_FOUND` / `ACCOUNT_NOT_FOUND` | 引用记录不存在 | 刷新选项后让用户重选 |
+| `CATEGORY_NOT_OWNED` / `ACCOUNT_NOT_OWNED` | 引用记录不属于当前用户 | 拒绝提交并刷新选项 |
+| `CATEGORY_TYPE_INVALID` / `CATEGORY_DISABLED` | 分类类型错误或已停用 | 按账单类型刷新分类 |
+| `ACCOUNT_DISABLED` | 账户已停用 | 刷新账户 |
+| `INVALID_OCCURRED_AT` | 发生时间非法或超过服务器当前时间 5 分钟 | 标记时间输入 |
+| `NOTE_TOO_LONG` | 备注超过 200 字 | 保留表单并提示缩短 |
+| `REQUEST_ID_REQUIRED` | 写请求缺少幂等 UUID | 客户端生成后再提交 |
+| `TRANSACTION_CREATE_FAILED` | 数据库写入未确认成功 | 保留表单和原 requestId 供显式重试 |
+| `TRANSACTION_NOT_FOUND` | 本人范围内未找到有效账单 | 不区分不存在与他人资源 |
 | `RESOURCE_NOT_FOUND` | 资源不存在、已删除或无权访问 | 返回列表或刷新，不区分无权限 |
 | `VERSION_CONFLICT` | 资源已被其他请求修改 | 刷新最新数据后由用户重试 |
 | `DUPLICATE_REQUEST` | 同 requestId 被用于不同 payload | 停止重试并记录排障信息 |
@@ -579,7 +725,7 @@ interface HomeOverviewResult {
 ## 10. 接口待定项
 
 1. 天气供应商确定后，城市搜索能力、天气字段可用性和错误映射；
-2. 字段长度、单笔金额上限、日期可回溯/可预填范围；
+2. 日期可回溯范围、未来商户字段长度及其他未实现业务字段长度；
 3. `upcoming` 固定 7 天是否符合产品原型；
 4. 基础预算是否首发；
 5. 用户删除的确认、冷静期、状态查询与撤销接口；

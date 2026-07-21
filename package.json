@@ -4,11 +4,13 @@
   "private": true,
   "description": "轻记微信原生小程序项目骨架",
   "scripts": {
-    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.tests.json --noEmit",
-    "lint": "eslint \"miniprogram/**/*.ts\" \"shared/**/*.ts\" \"tests/**/*.ts\"",
-    "test": "tsx --test tests/money.test.ts tests/date.test.ts tests/error.test.ts tests/project-structure.test.ts",
-    "build": "npm run typecheck && npm run lint",
-    "check": "npm run typecheck && npm run lint && npm test"
+    "configure:env": "node scripts/generate-environment-config.mjs",
+    "typecheck": "npm run configure:env && tsc -p tsconfig.json --noEmit --ignoreDeprecations 6.0 && tsc -p tsconfig.tests.json --noEmit --ignoreDeprecations 6.0 && tsc -p cloudfunctions/user/tsconfig.json --noEmit --ignoreDeprecations 6.0 && tsc -p cloudfunctions/ledger/tsconfig.json --noEmit --ignoreDeprecations 6.0",
+    "lint": "npm run configure:env && eslint \"miniprogram/**/*.ts\" \"shared/**/*.ts\" \"cloudfunctions/user/src/**/*.ts\" \"cloudfunctions/ledger/src/**/*.ts\" \"tests/**/*.ts\" \"scripts/**/*.mjs\"",
+    "test": "npm run configure:env && tsx --test tests/money.test.ts tests/date.test.ts tests/error.test.ts tests/project-structure.test.ts tests/user-initialization.test.ts tests/cloudbase-deployment-contract.test.ts tests/transaction-form.test.ts tests/transaction-list.test.ts tests/ledger-service.test.ts tests/ledger-function.test.ts",
+    "build:cloudfunctions": "tsc -p cloudfunctions/user/tsconfig.json --ignoreDeprecations 6.0 && tsc -p cloudfunctions/ledger/tsconfig.json --ignoreDeprecations 6.0",
+    "build": "npm run typecheck && npm run lint && npm run build:cloudfunctions",
+    "check": "npm run typecheck && npm run lint && npm test && npm run build:cloudfunctions"
   },
   "devDependencies": {
     "@types/node": "26.1.1",

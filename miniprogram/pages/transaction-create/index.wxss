@@ -1,0 +1,65 @@
+.ledger-page { padding-bottom: 96rpx; }
+
+.form-card,
+.success-card,
+.empty-stack {
+  box-sizing: border-box;
+  padding: 32rpx;
+  border: 1rpx solid #e7e9ec;
+  border-radius: 24rpx;
+  background: #ffffff;
+}
+
+.type-chip {
+  display: inline-flex;
+  padding: 10rpx 24rpx;
+  border-radius: 999rpx;
+  background: #e8f3ef;
+  color: #2f6f5e;
+  font-size: 28rpx;
+  font-weight: 600;
+}
+
+.amount-field {
+  display: flex;
+  align-items: baseline;
+  margin: 32rpx 0 8rpx;
+  padding-bottom: 20rpx;
+  border-bottom: 2rpx solid #2f6f5e;
+}
+
+.currency-symbol { color: #2f6f5e; font-size: 48rpx; font-weight: 650; }
+.amount-input { flex: 1; height: 96rpx; margin: 0 16rpx; font-size: 72rpx; font-weight: 650; }
+.amount-unit { color: #70757d; font-size: 28rpx; }
+
+.field-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 104rpx;
+  border-bottom: 1rpx solid #eef0f2;
+}
+
+.field-label { color: #34383d; font-size: 30rpx; font-weight: 550; }
+.field-control { flex: 1; margin-left: 32rpx; text-align: right; }
+.picker-value { color: #2f6f5e; font-size: 30rpx; }
+.compact { padding: 12rpx 16rpx; border-radius: 12rpx; background: #f2f5f4; }
+.datetime-row { align-items: flex-start; padding: 24rpx 0; }
+.datetime-controls { display: flex; gap: 12rpx; }
+
+.note-field { margin-top: 28rpx; }
+.note-header { display: flex; justify-content: space-between; }
+.note-count { color: #8b9097; font-size: 24rpx; }
+.note-input { box-sizing: border-box; width: 100%; min-height: 160rpx; margin-top: 16rpx; padding: 20rpx; border-radius: 16rpx; background: #f6f7f9; font-size: 28rpx; }
+.field-error { display: block; margin-top: 8rpx; color: #b34040; font-size: 24rpx; }
+
+.save-button { margin-top: 32rpx; border-radius: 16rpx; background: #2f6f5e; }
+.submit-error { margin-top: 24rpx; padding: 20rpx; border-radius: 14rpx; background: #fff1f0; color: #a83932; font-size: 26rpx; }
+.inline-retry { display: inline-block; margin: 12rpx 0 0; padding: 0; background: transparent; color: #2f6f5e; font-size: 26rpx; line-height: 1.5; }
+
+.success-card { margin-top: 24rpx; border-color: #b9d8cd; background: #f1f8f5; }
+.success-title { display: block; color: #216451; font-size: 34rpx; font-weight: 650; }
+.success-detail, .success-id { display: block; margin-top: 12rpx; color: #4f625c; font-size: 26rpx; word-break: break-all; }
+.secondary-button { margin-top: 24rpx; border: 1rpx solid #2f6f5e; border-radius: 14rpx; background: #ffffff; color: #2f6f5e; font-size: 28rpx; }
+.text-button { margin-top: 12rpx; background: transparent; color: #56615d; font-size: 26rpx; }
+.empty-stack app-empty + app-empty { display: block; border-top: 1rpx solid #eef0f2; }

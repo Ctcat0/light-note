@@ -133,7 +133,7 @@ cloudfunctions/<domain>/
 ### 5.1 身份建立
 
 - 微信小程序调用的普通云函数使用 `wx-server-sdk` 的 `cloud.getWXContext()` 获取 `OPENID`；`OPENID` 来自可信调用链，不从 `event` 读取。
-- `user.init` 按 `openId` 查找 `users`。不存在时创建 `users`、`user_settings`、默认账户、默认分类和默认待办清单；初始化需可重复执行。
+- `user.init` 按 `openId` 查找 `users`。不存在时创建 `users`，并幂等补齐 `user_settings`、默认账户和默认分类；默认待办清单留给待办域任务。
 - 其他接口必须解析到 `status = active` 的内部用户，得到 `users._id` 作为当前 `ownerId`。
 - `UNIONID` 不是 MVP 身份主键，也不自建 JWT。若未来扩展到非微信客户端，需另行设计认证迁移。
 
@@ -213,8 +213,15 @@ flowchart TD
 
 ## 9. 一致性、幂等与并发
 
+- 用户初始化为用户、设置、系统分类和系统账户生成确定性文档 ID，并在单个服务端事务内通过 `doc` 读写；这符合 CloudBase 事务仅支持单文档操作的限制。
+- `users.openId`、`user_settings.ownerId`、分类稳定键和账户稳定键仍需唯一索引作为数据完整性第二道防线；索引未建立前确定性 `_id` 仍可阻止同一模板的并发重复，但上线前不得省略索引配置。
+- 重复初始化只补齐缺失稳定键，不更新现有默认项的名称、图标、排序或启用状态；`initializationVersion` 用于区分未完成初始化与用户主动清空的设置。
 - 创建账单、创建待办必须传 UUID 格式 `requestId`；集合对 `{ ownerId, requestId }` 建唯一索引，重复请求返回首次创建的资源。
-- 更新和删除传 `expectedVersion`，查询条件同时包含 `ownerId`、`_id`、`version`、`isDeleted: false`；成功后 `version + 1`。版本不匹配返回 `VERSION_CONFLICT`。
+- 当前收入和支出创建均使用 `ownerId + requestId` 派生确定性 `transactions._id`，并在 CloudBase 事务内先读取该文档再创建；快速并发请求竞争同一文档，重试时会核对首次记录与规范化请求内容，相同内容返回首次记录，不同内容拒绝复用 requestId。确定性 ID 不替代唯一索引，后者仍防止未来其他入口按相同业务键写出重复数据。
+- 当前收支流水使用 `ownerId + type + isDeleted=false` 和用户时区月份半开区间查询，按 `occurredAt DESC, _id DESC` 做复合游标分页；游标绑定账单类型和年月并严格解析，但不承担授权，服务端每页都重新附加可信用户条件。全月收入和支出分别由云端聚合计算，结余使用整数分相减，不从前端已加载页推算。
+- 独立 `ledger.getMonthlySummary` 复用相同的可信身份、用户时区月份边界和云端聚合逻辑，只返回收入、支出和结余三个整数结果。当前首页直接通过 ledger service 使用该单模块接口；待天气和待办完成后，再由 `home.getOverview` 统一编排模块级降级，避免现在创建空壳聚合云函数。
+- 更新和删除传 `expectedVersion`，事务读取后同时校验 `ownerId`、`_id`、`version`、`isDeleted: false`；成功后 `version + 1`。通用资源版本不匹配返回 `VERSION_CONFLICT`，账单使用更具体的 `TRANSACTION_CONFLICT`。
+- 当前收入和支出编辑、删除均在 `transactions` 单文档事务内实现；业务错误使用更具体的 `TRANSACTION_CONFLICT`。记录保存最近一次变更 requestId、操作类型和服务端请求指纹，使成功响应丢失后的同请求重试返回等效结果，同 requestId 改变 payload 则拒绝。
 - 逻辑删除统一设置 `isDeleted = true`、`deletedAt` 和新版本；所有正常查询显式过滤 `isDeleted: false`。
 - 基础预算按 `{ ownerId, monthKey }` 唯一，并采用 upsert 语义；花费值从账单聚合，不重复存储为事实字段。
 - 首页聚合的多个模块独立返回状态；天气失败不回滚或阻断账目、待办摘要。
@@ -241,8 +248,8 @@ type ApiResponse<T> =
 
 ## 11. 环境、部署与安全边界
 
-- 至少划分开发、测试、生产三个 CloudBase 环境，集合、云函数、存储和天气密钥互相隔离；
-- 小程序前端只持有可公开的环境 ID 映射，不持有 AppSecret 或第三方 Key；
+- 至少划分开发、测试、生产三个 CloudBase 环境，集合、云函数、存储和天气密钥互相隔离；小程序分别按 `develop`、`trial`、`release` 选择对应环境；
+- 环境 ID 通过被忽略的 `.env.local` 或发布机环境变量生成前端运行时配置；生成文件不纳入版本控制，前端不持有 AppSecret 或第三方 Key；
 - 环境变量配置文件若纳入版本控制，只能声明变量名或空占位，不得包含真实值；
 - 云函数使用当前环境默认凭据访问 CloudBase，不在代码中配置永久 SecretId/SecretKey；
 - 业务集合关闭小程序客户端直接读写；天气缓存也仅云函数可读写；
@@ -253,7 +260,7 @@ type ApiResponse<T> =
 以下项目在编码前仍需确认，不能由实现者静默决定：
 
 1. 天气供应商、套餐限额、城市 ID 体系、许可归属和署名要求；
-2. CloudBase 开发/测试/生产环境 ID、部署工具与 Node.js 运行时版本；
+2. CloudBase 测试/生产环境 ID 与最终发布流水线；用户初始化云函数当前部署基线采用 `Nodejs20.19`；
 3. 微信基础库最低版本与目标机型范围；
 4. 是否使用 TDesign、WeUI 或纯原生组件，以及包体积预算；
 5. 单笔账单金额上限、备注/标题长度等产品阈值；

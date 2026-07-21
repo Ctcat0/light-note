@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { CLIENT_ERROR_CODES } from "../miniprogram/constants/errors";
+import { parseApiResponse } from "../miniprogram/services/cloud";
 import {
   AppError,
   normalizeError,
@@ -35,3 +36,23 @@ test("未知错误使用受控兜底文案", () => {
   assert.equal(result.message, "操作未完成，请稍后重试");
 });
 
+test("流水列表和汇总错误码可通过统一云函数响应解析", () => {
+  for (const code of [
+    "INVALID_YEAR",
+    "INVALID_MONTH",
+    "INVALID_PAGE_SIZE",
+    "INVALID_CURSOR",
+    "TRANSACTION_LIST_FAILED",
+    "TRANSACTION_SUMMARY_FAILED",
+  ] as const) {
+    const response = parseApiResponse({
+      success: false,
+      code,
+      message: "受控错误",
+      data: null,
+      requestId: "11111111-1111-4111-a111-111111111111",
+      serverTime: "2026-07-21T10:00:00.000Z",
+    });
+    assert.equal(response.code, code);
+  }
+});
