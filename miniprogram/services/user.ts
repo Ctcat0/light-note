@@ -7,6 +7,7 @@ import type {
   UserInitializationStatus,
   UserInitPayload,
   UserSettings,
+  UpdateUserSettingsPayload,
 } from "../types/user";
 import { createRequestId } from "../utils/request-id";
 import { isRecord } from "../utils/record";
@@ -67,13 +68,16 @@ function parseDefaultLocation(value: unknown): DefaultLocation | null {
   };
 }
 
-function parseSettings(value: unknown): UserSettings {
+export function parseSettings(value: unknown): UserSettings {
   if (
     !isRecord(value) ||
     value.currency !== "CNY" ||
     typeof value.timezone !== "string" ||
-    (value.defaultAccountId !== null &&
-      typeof value.defaultAccountId !== "string") ||
+    (value.defaultTransactionType !== "expense" &&
+      value.defaultTransactionType !== "income") ||
+    typeof value.defaultExpenseAccountId !== "string" ||
+    typeof value.defaultIncomeAccountId !== "string" ||
+    typeof value.preferGeolocation !== "boolean" ||
     typeof value.showWeather !== "boolean" ||
     typeof value.showBudget !== "boolean" ||
     !isTheme(value.theme) ||
@@ -86,8 +90,11 @@ function parseSettings(value: unknown): UserSettings {
   return {
     currency: value.currency,
     timezone: value.timezone,
-    defaultAccountId: value.defaultAccountId,
+    defaultTransactionType: value.defaultTransactionType,
+    defaultExpenseAccountId: value.defaultExpenseAccountId,
+    defaultIncomeAccountId: value.defaultIncomeAccountId,
     defaultLocation: parseDefaultLocation(value.defaultLocation),
+    preferGeolocation: value.preferGeolocation,
     showWeather: value.showWeather,
     showBudget: value.showBudget,
     theme: value.theme,
@@ -177,4 +184,26 @@ const userInitializationService = createUserInitializationService();
 
 export function initializeCurrentUser(): Promise<UserInitializationCallResult> {
   return userInitializationService.initialize();
+}
+
+export function getCurrentUserSettings(): Promise<UserSettings> {
+  return callCloudFunctionWithMetadata({
+    functionName: CLOUD_FUNCTIONS.USER,
+    action: "getSettings",
+    requestId: createRequestId(),
+    payload: {},
+    parseData: parseSettings,
+  }).then((result) => result.data);
+}
+
+export function updateCurrentUserSettings(
+  payload: UpdateUserSettingsPayload,
+): Promise<UserSettings> {
+  return callCloudFunctionWithMetadata({
+    functionName: CLOUD_FUNCTIONS.USER,
+    action: "updateSettings",
+    requestId: createRequestId(),
+    payload,
+    parseData: parseSettings,
+  }).then((result) => result.data);
 }

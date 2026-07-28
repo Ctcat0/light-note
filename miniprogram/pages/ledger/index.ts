@@ -1,12 +1,13 @@
 import { ledgerService } from "../../services/ledger";
+import { consumeTransactionCategoryFilter } from "../../services/transaction-category-filter";
 import { readTransactionListRefreshSignal } from "../../services/transaction-list-refresh";
 import type {
   TransactionCursor,
   TransactionDayGroup,
   TransactionListItem,
+  TransactionListFilter,
   TransactionListLoadStatus,
   TransactionMonthSummary,
-  TransactionType,
 } from "../../types/transaction";
 import {
   compareYearMonth,
@@ -30,13 +31,17 @@ import {
 const PAGE_SIZE = 20;
 
 interface LedgerPageData {
-  selectedType: TransactionType;
-  selectedTypeLabel: string;
+  selectedFilter: TransactionListFilter;
+  selectedFilterLabel: string;
+  categoryFilterId: string;
+  categoryFilterName: string;
   loadStatus: TransactionListLoadStatus;
   items: TransactionListItem[];
   groups: TransactionDayGroup[];
   summary: TransactionMonthSummary | null;
-  summaryDisplay: string;
+  monthIncomeDisplay: string;
+  monthExpenseDisplay: string;
+  monthBalanceDisplay: string;
   selectedYear: number;
   selectedMonth: number;
   selectedMonthPickerValue: string;
@@ -67,7 +72,9 @@ interface LedgerPageMethods {
   handleMonthPickerChange(event: MonthPickerEvent): void;
   handleRetry(): void;
   handleLoadMoreRetry(): void;
-  handleTypeChange(event: { currentTarget: { dataset: { type?: string } } }): void;
+  handleFilterChange(event: { currentTarget: { dataset: { filter?: string } } }): void;
+  handleClearCategoryFilter(): void;
+  handleOpenStatistics(): void;
   handleAddTransaction(): void;
   handleTransactionTap(event: { currentTarget: { dataset: { id?: string } } }): void;
 }
@@ -76,13 +83,17 @@ function getInitialData(): LedgerPageData {
   const current = getYearMonth(new Date(), DEFAULT_TIME_ZONE);
   const signal = readTransactionListRefreshSignal();
   return {
-    selectedType: "expense",
-    selectedTypeLabel: "支出",
+    selectedFilter: "all",
+    selectedFilterLabel: "收支",
+    categoryFilterId: "",
+    categoryFilterName: "",
     loadStatus: "initialLoading",
     items: [],
     groups: [],
     summary: null,
-    summaryDisplay: "",
+    monthIncomeDisplay: "",
+    monthExpenseDisplay: "",
+    monthBalanceDisplay: "",
     selectedYear: current.year,
     selectedMonth: current.month,
     selectedMonthPickerValue: `${formatYearMonth(current)}-01`,
@@ -119,6 +130,28 @@ Page<LedgerPageData, LedgerPageMethods>({
   },
 
   onShow(): void {
+    const categorySignal = consumeTransactionCategoryFilter();
+    if (categorySignal !== null) {
+      this.setData({
+        selectedFilter: categorySignal.type,
+        selectedFilterLabel: categorySignal.type === "expense" ? "支出" : "收入",
+        categoryFilterId: categorySignal.categoryId,
+        categoryFilterName: categorySignal.categoryName,
+        selectedYear: categorySignal.year,
+        selectedMonth: categorySignal.month,
+        selectedMonthPickerValue: `${formatYearMonth(categorySignal)}-01`,
+        selectedMonthLabel: formatYearMonthLabel(categorySignal),
+        requestVersion: this.data.requestVersion + 1,
+        firstPageLoading: false,
+        items: [],
+        groups: [],
+        summary: null,
+        nextCursor: null,
+        hasMore: false,
+      });
+      void this.loadFirstPage("initial");
+      return;
+    }
     if (!this.data.hasLoadedOnce) return;
     const signal = readTransactionListRefreshSignal();
     if (signal === null || signal.revision <= this.data.lastRefreshRevision) return;
@@ -166,7 +199,9 @@ Page<LedgerPageData, LedgerPageMethods>({
             items: [],
             groups: [],
             summary: null,
-            summaryDisplay: "",
+            monthIncomeDisplay: "",
+            monthExpenseDisplay: "",
+            monthBalanceDisplay: "",
             nextCursor: null,
             hasMore: false,
           }
@@ -204,7 +239,8 @@ Page<LedgerPageData, LedgerPageMethods>({
         canSelectNextMonth: compareYearMonth(selected, currentMonth) < 0,
       });
       const result = await ledgerService.listTransactions({
-        type: this.data.selectedType,
+        filter: this.data.selectedFilter,
+        categoryId: this.data.categoryFilterId || null,
         year: selected.year,
         month: selected.month,
         pageSize: PAGE_SIZE,
@@ -232,11 +268,14 @@ Page<LedgerPageData, LedgerPageMethods>({
         items,
         groups: groupTransactionsByDay(items, timeZone),
         summary: result.summary,
-        summaryDisplay: formatAmountInCents(
-          this.data.selectedType === "expense"
-            ? result.summary.monthExpenseInCents
-            : result.summary.monthIncomeInCents,
-          { showCurrencySymbol: false },
+        monthIncomeDisplay: formatAmountInCents(
+          result.summary.monthIncomeInCents,
+        ),
+        monthExpenseDisplay: formatAmountInCents(
+          result.summary.monthExpenseInCents,
+        ),
+        monthBalanceDisplay: formatAmountInCents(
+          result.summary.monthBalanceInCents,
         ),
         nextCursor: result.pagination.nextCursor,
         hasMore: result.pagination.hasMore,
@@ -294,7 +333,8 @@ Page<LedgerPageData, LedgerPageMethods>({
     this.setData({ loadStatus: "loadingMore", errorMessage: "" });
     try {
       const result = await ledgerService.listTransactions({
-        type: this.data.selectedType,
+        filter: this.data.selectedFilter,
+        categoryId: this.data.categoryFilterId || null,
         year: selected.year,
         month: selected.month,
         pageSize: PAGE_SIZE,
@@ -322,11 +362,14 @@ Page<LedgerPageData, LedgerPageMethods>({
         items,
         groups: groupTransactionsByDay(items, this.data.timeZone),
         summary: result.summary,
-        summaryDisplay: formatAmountInCents(
-          this.data.selectedType === "expense"
-            ? result.summary.monthExpenseInCents
-            : result.summary.monthIncomeInCents,
-          { showCurrencySymbol: false },
+        monthIncomeDisplay: formatAmountInCents(
+          result.summary.monthIncomeInCents,
+        ),
+        monthExpenseDisplay: formatAmountInCents(
+          result.summary.monthExpenseInCents,
+        ),
+        monthBalanceDisplay: formatAmountInCents(
+          result.summary.monthBalanceInCents,
         ),
         nextCursor: result.pagination.nextCursor,
         hasMore: result.pagination.hasMore,
@@ -367,7 +410,9 @@ Page<LedgerPageData, LedgerPageMethods>({
       items: [],
       groups: [],
       summary: null,
-      summaryDisplay: "",
+      monthIncomeDisplay: "",
+      monthExpenseDisplay: "",
+      monthBalanceDisplay: "",
       nextCursor: null,
       hasMore: false,
       errorMessage: "",
@@ -412,23 +457,28 @@ Page<LedgerPageData, LedgerPageMethods>({
     void this.loadMore();
   },
 
-  handleTypeChange(event): void {
-    const type = event.currentTarget.dataset.type;
+  handleFilterChange(event): void {
+    const filter = event.currentTarget.dataset.filter;
     if (
-      (type !== "expense" && type !== "income") ||
-      type === this.data.selectedType
+      (filter !== "all" && filter !== "expense" && filter !== "income") ||
+      filter === this.data.selectedFilter
     ) {
       return;
     }
     this.setData({
-      selectedType: type,
-      selectedTypeLabel: type === "expense" ? "支出" : "收入",
+      selectedFilter: filter,
+      selectedFilterLabel:
+        filter === "all" ? "收支" : filter === "expense" ? "支出" : "收入",
+      categoryFilterId: "",
+      categoryFilterName: "",
       requestVersion: this.data.requestVersion + 1,
       firstPageLoading: false,
       items: [],
       groups: [],
       summary: null,
-      summaryDisplay: "",
+      monthIncomeDisplay: "",
+      monthExpenseDisplay: "",
+      monthBalanceDisplay: "",
       nextCursor: null,
       hasMore: false,
       errorMessage: "",
@@ -436,10 +486,30 @@ Page<LedgerPageData, LedgerPageMethods>({
     void this.loadFirstPage("initial");
   },
 
-  handleAddTransaction(): void {
-    wx.navigateTo({
-      url: `/pages/transaction-create/index?type=${this.data.selectedType}`,
+  handleClearCategoryFilter(): void {
+    if (!this.data.categoryFilterId) return;
+    this.setData({
+      categoryFilterId: "",
+      categoryFilterName: "",
+      requestVersion: this.data.requestVersion + 1,
+      firstPageLoading: false,
+      items: [],
+      groups: [],
+      summary: null,
+      nextCursor: null,
+      hasMore: false,
     });
+    void this.loadFirstPage("initial");
+  },
+
+  handleOpenStatistics(): void {
+    wx.navigateTo({
+      url: `/pages/statistics/index?year=${this.data.selectedYear}&month=${this.data.selectedMonth}`,
+    });
+  },
+
+  handleAddTransaction(): void {
+    wx.navigateTo({ url: "/pages/transaction-create/index" });
   },
 
   handleTransactionTap(event): void {

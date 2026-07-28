@@ -1,6 +1,6 @@
 import * as cloud from "wx-server-sdk";
 import type { ApiResponse } from "../../../shared/types/api";
-import type { UserInitializationResult } from "../../../shared/types/user";
+import type { UserInitializationResult, UserSettings } from "../../../shared/types/user";
 import { createUserFunctionHandler } from "./application/handler";
 import {
   createCloudBaseUserInitializationStore,
@@ -25,6 +25,6 @@ const handler = createUserFunctionHandler({
 
 export async function main(
   event: unknown,
-): Promise<ApiResponse<UserInitializationResult>> {
+): Promise<ApiResponse<UserInitializationResult | UserSettings>> {
   return handler(event);
 }

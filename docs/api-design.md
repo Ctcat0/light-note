@@ -9,11 +9,12 @@
 
 | 云函数名 | 业务域 | MVP action |
 | --- | --- | --- |
-| `user` | 用户初始化与设置 | `init`, `getSettings`, `updateSettings`, `requestDeletion` |
+| `user` | 用户初始化与设置 | `init`, `getSettings`, `updateSettings` |
 | `ledger` | 账单、分类、账户、预算 | 见第 4 节 |
 | `todo` | 待办与清单 | 见第 5 节 |
 | `weather` | 城市搜索与天气 | `searchLocations`, `getWeather` |
 | `home` | 首页聚合 | `getOverview` |
+| `dataDeletion` | 删除申请 | `getStatus`, `request`, `cancel` |
 
 请求统一为：
 
@@ -102,8 +103,11 @@ interface DefaultLocationDto {
 interface UserSettingsDto {
   currency: "CNY";
   timezone: string;
-  defaultAccountId: string | null;
+  defaultTransactionType: "expense" | "income";
+  defaultExpenseAccountId: string;
+  defaultIncomeAccountId: string;
   defaultLocation: DefaultLocationDto | null;
+  preferGeolocation: boolean;
   showWeather: boolean;
   showBudget: boolean;
   theme: "system" | "light" | "dark";
@@ -142,7 +146,7 @@ interface InitResult {
 }
 ```
 
-首次成功调用应分别创建 11 个支出分类、8 个收入分类和 5 个账户；微信账户成为新用户默认账户。完整重复调用的各创建数量为 `0`，并返回 `repeatedInitialization = true`；部分缺失补齐时该值为 `false`。接口只补齐按稳定 `systemKey` 缺失的系统项，不按中文名称匹配，不覆盖已修改名称、停用状态或现有默认账户。
+首次成功调用应分别创建 11 个支出分类、8 个收入分类和 5 个固定渠道；微信渠道成为新用户默认支付和收款方式。完整重复调用的各创建数量为 `0`，并返回 `repeatedInitialization = true`；部分缺失补齐时该值为 `false`。接口只补齐按稳定 `systemKey` 缺失的系统项，不按中文名称匹配，不开放固定渠道新增、编辑、删除、停用或排序，也不覆盖现有默认支付/收款方式。
 
 ### 3.3 `getSettings`
 
@@ -153,49 +157,78 @@ interface InitResult {
 请求：
 
 ```ts
-interface UpdateSettingsPayload {
-  expectedVersion: number;
-  changes: {
-    timezone?: string;
-    defaultAccountId?: string | null;
-    defaultLocation?: DefaultLocationDto | null;
-    showWeather?: boolean;
-    showBudget?: boolean;
-    theme?: "system" | "light" | "dark";
-  };
-}
+type UpdateSettingsPayload =
+  | {
+      expectedVersion: number;
+      group: "ledger";
+      changes: {
+        defaultTransactionType?: "expense" | "income";
+        defaultExpenseAccountId?: string;
+        defaultIncomeAccountId?: string;
+      };
+    }
+  | {
+      expectedVersion: number;
+      group: "weather";
+      changes: {
+        defaultLocation?: DefaultLocationDto | null;
+        preferGeolocation?: boolean;
+      };
+    };
 ```
 
 规则：
 
-- `currency` 在 MVP 不可修改；
-- `defaultAccountId` 必须属于本人且启用；
+- `currency`、时区和未开放偏好不可通过该接口修改；
+- 记账与天气使用判别明确的分组 payload，每次只能更新一个分组，未提交字段保持原值；
+- `defaultExpenseAccountId` 和 `defaultIncomeAccountId` 必须属于本人且启用；
 - `defaultLocation.locationKey` 必须来自 `weather.searchLocations` 或受控定位解析结果，不接受任意 URL；
-- `timezone` 必须在服务端允许的 IANA 时区列表中；修改时区不改写历史 `occurredAt`，但后续自然日聚合按新时区解释；
+- `preferGeolocation` 仅保存用户偏好，不绕过微信位置授权；
+- `updatedAt` 一律使用服务端时间；
 - 返回更新后的 `UserSettingsDto`。
 
-### 3.5 `requestDeletion`
+### 3.5 本地缓存操作
 
-请求：
+“清除天气缓存”只删除本机天气快照；“清除本地可再生缓存”删除本机天气和首页快照。两者均不直接修改共享 `weather_cache`，不需要云函数 action。
+
+## 4. 个人数据删除 API（`dataDeletion`）
+
+公共云函数只暴露以下三个 action，身份只从 `getWXContext().OPENID` 获取。
+
+### 4.1 `getStatus`
+
+payload 为空，返回当前申请或 `null`。
+
+### 4.2 `request`
+
+payload 为空；顶层 `requestId` 是申请幂等键。同一申请重试返回原记录，不同请求不能覆盖 `pending` 或 `processing` 申请。服务端写入 `requestedAt` 和固定 7 天的 `cooldownEndsAt`，并把用户状态改为 `deletion_pending`。
+
+### 4.3 `cancel`
 
 ```ts
-interface RequestDeletionPayload {
-  confirmText: string;
+interface CancelDeletionPayload {
+  expectedVersion: number;
 }
 ```
 
-规则：确认文案、冷静期和二次验证方式待合规方案确认。接口将用户置为 `deletion_pending` 并返回删除申请状态；在规则确认前不得上线该 action。
+仅 `pending` 可撤销；成功后申请状态为 `cancelled`，用户恢复 `active`。
 
-## 4. 记账 API（`ledger`）
+### 4.4 受保护执行器（`dataDeletionExecutor`）
 
-### 4.1 账单 DTO
+执行器是独立云函数，不出现在前端云函数常量中。它要求至少 24 字符的 `DATA_DELETION_EXECUTOR_TOKEN`，按冷静期、失败重试时间和执行租约认领任务，分批删除当前 `ownerId` 数据并保存进度。前端不得持有令牌或直接执行删除。
+
+## 5. 记账 API（`ledger`）
+
+### 5.1 账单 DTO
 
 ```ts
 type TransactionType = "expense" | "income";
+type SupportedTransactionType = TransactionType;
+type TransactionListFilter = "all" | SupportedTransactionType;
 
 interface TransactionDto {
   transactionId: string;
-  type: TransactionType;
+  type: SupportedTransactionType;
   amountInCents: number;
   categoryId: string;
   accountId: string;
@@ -213,7 +246,7 @@ interface TransactionDto {
 }
 
 interface TransactionWriteFields {
-  type: TransactionType;
+  type: SupportedTransactionType;
   amountInCents: number;
   categoryId: string;
   accountId: string;
@@ -226,9 +259,9 @@ interface TransactionWriteFields {
 
 服务端校验 `amountInCents` 为正的安全整数；`categoryId` 的类型必须与 `type` 匹配；`occurredDateKey` 由服务端派生，客户端不得提交。
 
-当前实现开放收入和支出创建。`merchant` 固定为 `null`，`includeInBudget` 由类型决定：支出为 `true`、收入为 `false`；服务端生成空 `tags` 和 `attachmentUrls`。转账、标签和附件没有可调用的写入逻辑。
+当前实现开放收入和支出创建。`merchant` 固定为 `null`，`includeInBudget` 由类型决定：支出为 `true`、收入为 `false`；服务端生成空 `tags` 和 `attachmentUrls`。标签和附件没有可调用的写入逻辑。
 
-### 4.2 账单 actions
+### 5.2 账单 actions
 
 | action | payload | data | 关键规则 |
 | --- | --- | --- | --- |
@@ -236,7 +269,7 @@ interface TransactionWriteFields {
 | `getTransaction` | `{ transactionId: string }` | `{ transaction: TransactionDto }` | 仅本人、未删除记录，用于新增后的精确写入确认 |
 | `updateTransaction` | `UpdateTransactionRequest` | `UpdateTransactionResult` | 编辑收入或支出；类型不可变；校验版本、引用归属与派生日期；同请求重试幂等 |
 | `deleteTransaction` | `DeleteTransactionRequest` | `DeleteTransactionResult` | 逻辑删除收入或支出；同请求重试返回等效成功，不同请求重复删除返回 `TRANSACTION_ALREADY_DELETED` |
-| `listTransactions` | `ListTransactionsPayload` | `ListTransactionsResult` | 按收入或支出类型查询指定月份、当前用户、未删除记录，稳定游标分页并返回全月收支汇总 |
+| `listTransactions` | `ListTransactionsPayload` | `ListTransactionsResult` | 默认混合查询收入与支出，也可按单一类型筛选；稳定游标分页并返回全月收支汇总 |
 | `getMonthlySummary` | `GetMonthlySummaryPayload` | `GetMonthlySummaryResult` | 已实现；按用户时区汇总指定月份收入、支出和结余，不含预算与分类统计 |
 
 本次已实现的最小契约：
@@ -303,7 +336,8 @@ interface DeleteTransactionResult {
 type TransactionCursor = string; // 客户端视为不透明字符串
 
 interface ListTransactionsPayload {
-  type: "expense" | "income";
+  filter: "all" | "expense" | "income"; // 页面默认 all
+  categoryId?: string | null; // 分类下钻时必配单一收入/支出 filter
   year: number;       // 1000–9999 的四位整数
   month: number;      // 1–12
   pageSize: number;   // 1–50，页面默认 20
@@ -380,17 +414,17 @@ interface PlannedMonthlySummaryDto {
 }
 ```
 
-`listTransactions` 必须接受一个 `type` 筛选，但不接受任意起止时间或身份字段。云函数从可信上下文解析当前 `ownerId`，按用户设置时区计算月份半开区间，并查询 `ownerId + type + isDeleted=false`。排序为 `occurredAt DESC, _id DESC`；查询 `pageSize + 1` 条判断 `hasMore`。游标是 Base64URL 编码的严格版本化对象，包含版本、类型、年月、`occurredAt` 和 `transactionId`；服务端校验字段集合、ID 格式、类型与月份绑定和时间范围，非法、跨类型或跨月游标返回 `INVALID_CURSOR`。游标不是授权凭证，所有查询仍重新附加当前用户条件。
+`listTransactions` 接受 `all | expense | income` 筛选，但不接受任意起止时间或身份字段。页面默认发送 `all`；分类下钻必须指定单一收入/支出类型。云函数从可信上下文解析当前 `ownerId`，按用户设置时区计算月份半开区间，并在单次查询中使用 `ownerId`、`isDeleted=false`、类型和可选 `categoryId`。排序为 `occurredAt DESC, _id DESC`；查询 `pageSize + 1` 条判断 `hasMore`。游标是 Base64URL 编码的严格版本化对象，包含版本、筛选、分类 ID、年月、`occurredAt` 和 `transactionId`；服务端校验字段集合、ID 格式、筛选/分类与月份绑定和时间范围，非法或跨条件游标返回 `INVALID_CURSOR`。游标不是授权凭证，所有查询仍重新附加当前用户条件。
 
 `summary.monthExpenseInCents` 与 `summary.monthIncomeInCents` 由同一云函数分别针对整月匹配集合执行聚合求和，`monthBalanceInCents = monthIncomeInCents - monthExpenseInCents`，均与当前页条数无关；空月份为 `0`。分类和账户信息按本页去重后的 ID 分成最多 10 个 ID 的批次查询，并同时限制当前 `ownerId`，避免逐条 N+1。当前采用“关联最新名称”语义，不保存或返回名称快照。
 
-`getMonthlySummary` 复用上述聚合逻辑，但请求只接受 `year` 和 `month`，不接受 `type`、`ownerId`、`userId` 或 `openId`。云函数从可信调用上下文解析当前用户，以 `user_settings.timezone` 计算月份半开区间；收入和支出分别过滤 `isDeleted = false` 后求和。空月份返回三个 `0`，聚合失败返回 `TRANSACTION_SUMMARY_FAILED`。当前接口不返回预算、分类明细、账户余额或浮点比例。
+`getMonthlySummary` 复用上述聚合逻辑，但请求只接受 `year` 和 `month`，不接受 `type`、`ownerId`、`userId` 或 `openId`。云函数从可信调用上下文解析当前用户，以 `user_settings.timezone` 计算月份半开区间；收入和支出分别过滤 `isDeleted = false` 后求和。空月份返回三个 `0`，聚合失败返回 `TRANSACTION_SUMMARY_FAILED`。当前接口不返回预算、分类明细或浮点比例。
 
 列表输入错误分别返回 `INVALID_YEAR`、`INVALID_MONTH`、`INVALID_PAGE_SIZE`、`INVALID_CURSOR`；列表、展示关联和汇总依赖失败分别映射为 `TRANSACTION_LIST_FAILED` 或 `TRANSACTION_SUMMARY_FAILED`。项目现有未登录错误码为 `UNAUTHENTICATED`，等价于需求草案中的 `UNAUTHORIZED`，不另建含义重复的第二套代码。
 
 `usageBasisPoints` 使用整数万分比；例如 70.25% 返回 `7025`。预算为 0 不允许保存，因此不存在除零语义。
 
-### 4.3 分类 DTO 与 actions
+### 5.3 分类 DTO 与 actions
 
 ```ts
 interface CategoryDto {
@@ -413,7 +447,7 @@ interface CategoryDto {
 
 恢复默认分类通过幂等初始化模板补齐，不删除或覆盖用户自定义分类。MVP 不提供物理删除分类接口。
 
-### 4.4 账户 DTO 与 actions
+### 5.4 固定资金渠道 DTO 与 actions
 
 ```ts
 interface AccountDto {
@@ -422,7 +456,7 @@ interface AccountDto {
   type: "cash" | "wechat" | "alipay" | "bank" | "other";
   icon: string | null;
   sortOrder: number;
-  isDefault: boolean; // 由 user_settings.defaultAccountId 派生，不是 accounts 存储字段
+  isDefault: boolean; // 按请求收支类型由对应默认渠道派生
   isSystem: boolean;
   isEnabled: boolean;
   version: number;
@@ -431,13 +465,55 @@ interface AccountDto {
 
 | action | payload | data | 关键规则 |
 | --- | --- | --- | --- |
-| `listAccounts` | `{ includeDisabled?: boolean }` | `{ items: AccountDto[] }` | 默认只返回启用项 |
-| `createAccount` | `{ name; type; icon?; sortOrder?; makeDefault?: boolean }` | `AccountDto` | 首个账户自动为默认 |
-| `updateAccount` | `{ accountId; expectedVersion; changes: { name?; type?; icon?; sortOrder?; isEnabled?; makeDefault?: true } }` | `AccountDto` | 不得停用唯一有效账户；`makeDefault` 更新设置中的唯一引用 |
+| `listAccounts` | `{ transactionType: "expense" \| "income"; includeDisabled: false }` | `{ items: AccountDto[] }` | 仅返回当前用户启用的固定资金渠道，并按收支类型标记默认项 |
 
-MVP 账户 API 不含初始余额、当前余额和转账。
+固定渠道没有面向用户的新增、编辑、删除、停用或排序 action。正式交易接口返回纯交易结果，不返回渠道变更副作用。
 
-### 4.5 基础预算 actions
+### 5.5 统计分析 actions
+
+统计沿用 `ledger` 云函数，但由独立前端 `statisticsService` 调用三个只读 action，以支持页面局部失败和独立重试：
+
+| action | payload | data | 关键规则 |
+| --- | --- | --- | --- |
+| `getStatisticsSummary` | `{ year, month }` | `StatisticsMonthSummary` | 返回月收入、月支出、结余和收支笔数 |
+| `getStatisticsTrend` | `{ endYear, endMonth, monthCount: 6 \| 12 }` | `StatisticsTrendResult` | 服务端计算范围、跨年、补齐空月、旧到新排序 |
+| `getCategoryStatistics` | `{ year, month, type: expense \| income }` | `CategoryStatisticsResult` | 分类聚合后按金额降序，合计与明细严格一致 |
+
+```ts
+interface StatisticsMonthSummary {
+  year: number;
+  month: number;
+  monthIncomeInCents: number;
+  monthExpenseInCents: number;
+  monthBalanceInCents: number;
+  incomeCount: number;
+  expenseCount: number;
+}
+
+interface StatisticsTrendItem {
+  year: number;
+  month: number;
+  monthKey: MonthKey;
+  incomeInCents: number;
+  expenseInCents: number;
+  balanceInCents: number;
+}
+
+interface CategoryStatisticsItem {
+  categoryId: string;
+  categoryName: string;
+  categoryIcon: string;
+  amountInCents: number;
+  count: number;
+  ratioBasisPoints: number;
+}
+```
+
+所有 action 都从可信微信上下文解析 `ownerId`，固定过滤 `isDeleted=false` 和收入/支出类型，月份边界按当前设置时区计算。分类名称采用“关联当前记录”语义；分类文档缺失时返回“已删除分类”与 `other` 图标，但仍保留对应金额、笔数和占比。统计页点击分类后把 `{ year, month, type, categoryId }` 交给现有流水查询，游标同时绑定分类 ID；服务端每页仍重新附加可信用户条件。
+
+趋势和分类在数据库侧聚合，不向前端下载整库交易。当前用原生条形数据视图同时展示文字与金额，不增加图表依赖。统计异常分别映射为 `STATISTICS_QUERY_FAILED`、`STATISTICS_TREND_FAILED`、`STATISTICS_CATEGORY_FAILED`；`monthCount` 非 6/12 返回 `INVALID_MONTH_COUNT`。
+
+### 5.6 基础预算 actions
 
 ```ts
 interface BudgetDto {
@@ -457,9 +533,9 @@ interface BudgetDto {
 
 基础预算若未确认进入首发，则这三个 action、设置中的 `showBudget` 和首页预算块一起关闭，不能只实现一部分。
 
-## 5. 待办 API（`todo`）
+## 6. 待办 API（`todo`）
 
-### 5.1 DTO
+### 6.1 DTO
 
 ```ts
 type TodoStatus = "pending" | "doing" | "completed" | "cancelled";
@@ -491,7 +567,7 @@ interface TodoDto {
 
 `isOverdue` 是按用户时区实时计算的响应字段，不落库。`dueKind = none` 的待办永不逾期。
 
-### 5.2 待办 actions
+### 6.2 待办 actions
 
 | action | payload | data | 关键规则 |
 | --- | --- | --- | --- |
@@ -531,6 +607,8 @@ interface ListTodosPayload {
 }
 ```
 
+`title` 在服务端去首尾空格后必须为 1–100 字；`description` 去首尾空格后最多 500 字，空字符串统一存为 `null`。创建、编辑、状态修改和删除都使用顶层 UUID `requestId` 做幂等保护。
+
 视图语义：
 
 - `today`：`dueDateKey` 等于服务端当前 `dateKey` 且未删除；
@@ -540,7 +618,7 @@ interface ListTodosPayload {
 - `overdue`：截止值早于当前自然日/时刻，且状态不是 `completed`/`cancelled`；
 - 无截止时间任务不进入 `today`、`upcoming` 或 `overdue`。
 
-### 5.3 待办清单 actions
+### 6.3 待办清单 actions
 
 ```ts
 interface TodoListDto {
@@ -562,11 +640,11 @@ MVP 必须提供 `listTodoLists` 读取默认清单：
 
 自定义清单管理不在 MVP；需要时再增加 create/update action，不得先暴露无权限校验的通用 CRUD。
 
-## 6. 天气 API（`weather`）
+## 7. 天气 API（`weather`）
 
-天气 action 也要求有效用户身份，以便限流和防止云函数成为公开代理。天气密钥仅存在云函数环境变量中。
+天气 action 也要求有效用户身份，以便限流和防止云函数成为公开代理。MVP adapter 采用 Open-Meteo 免费开放接口，云函数只访问代码中固定的官方 Forecast 与 Geocoding host，不需要 API Key，也不接受客户端 host 或 URL。
 
-### 6.1 `searchLocations`
+### 7.1 `searchLocations`
 
 请求采用二选一：
 
@@ -578,9 +656,10 @@ type SearchLocationsPayload =
 
 规则：
 
-- `keyword` 长度和返回条数受限，禁止将任意查询参数透传给供应商；
-- 坐标必须由用户当次主动授权获得，校验纬度 `[-90, 90]`、经度 `[-180, 180]`；日志不得记录原始精确坐标；
+- `keyword` 长度为 1 至 40 个字符，最多返回 10 项，禁止将任意查询参数透传给供应商；
+- 坐标必须由用户当次主动授权获得，校验纬度 `[-90, 90]`、经度 `[-180, 180]`，传给 adapter 前降至小数点后 2 位；日志不得记录原始精确坐标；
 - 不自动写入用户设置，用户选定后再调用 `user.updateSettings`。
+- Open-Meteo 城市坐标对外统一包装为 `open-meteo:<latitude>,<longitude>`，坐标最多四位小数；客户端不能提交任意供应商或 host。
 
 响应：
 
@@ -597,7 +676,7 @@ interface SearchLocationsResult {
 }
 ```
 
-### 6.2 `getWeather`
+### 7.2 `getWeather`
 
 请求：
 
@@ -643,9 +722,11 @@ interface WeatherResult {
 
 温度可包含小数，因为它不是金额；字段必须是有限数并限制在合理气象范围。供应商失败时，仅在 `staleUntil` 内返回旧缓存并标记 `cacheStatus = stale`；否则返回 `WEATHER_UNAVAILABLE`。
 
-## 7. 首页聚合 API（`home`）
+Open-Meteo 当前天气没有同时间点降水概率时，`current.precipitationProbabilityPercent` 返回 `null`；三日预报使用 `precipitation_probability_max`。实时与三日预报分别使用 15 分钟和 2 小时新鲜 TTL，失败降级窗口分别为 6 小时和 24 小时。
 
-### 7.1 `getOverview`
+## 8. 首页聚合 API（`home`）
+
+### 8.1 `getOverview`
 
 请求：
 
@@ -687,7 +768,9 @@ interface HomeOverviewResult {
 
 首页 service 可先展示带时间戳的本地快照，再刷新该 action。快照不是写操作事实来源。
 
-## 8. 错误码
+基础预算当前延期，因此实现返回 `budget: null` 且首页不展示预算占位；预算进入开发后再同步调整数据模型、接口与页面。
+
+## 9. 错误码
 
 | code | 含义 | 前端建议 |
 | --- | --- | --- |
@@ -695,6 +778,7 @@ interface HomeOverviewResult {
 | `UNAUTHENTICATED` | 无法取得有效微信身份/用户 | 重新初始化；仍失败则提示 |
 | `USER_NOT_INITIALIZED` | 当前身份尚未完成用户初始化 | 先调用 `user.init`，不要继续写入 |
 | `USER_DISABLED` | 用户禁用或待删除 | 阻止业务写入并进入说明页 |
+| `INVALID_TRANSACTION_TYPE` | 请求了本次未支持的交易类型或流水筛选 | 只允许收入、支出或全部筛选 |
 | `INVALID_AMOUNT` | 金额不是允许范围内的正整数分 | 标记金额输入，不重试 |
 | `CATEGORY_REQUIRED` / `ACCOUNT_REQUIRED` | 未选择必需的分类或账户 | 标记表单字段 |
 | `CATEGORY_NOT_FOUND` / `ACCOUNT_NOT_FOUND` | 引用记录不存在 | 刷新选项后让用户重选 |
@@ -709,25 +793,32 @@ interface HomeOverviewResult {
 | `RESOURCE_NOT_FOUND` | 资源不存在、已删除或无权访问 | 返回列表或刷新，不区分无权限 |
 | `VERSION_CONFLICT` | 资源已被其他请求修改 | 刷新最新数据后由用户重试 |
 | `DUPLICATE_REQUEST` | 同 requestId 被用于不同 payload | 停止重试并记录排障信息 |
+| `TODO_TITLE_REQUIRED` / `TODO_TITLE_TOO_LONG` | 待办标题为空或超过 100 字 | 保留表单并标记标题 |
+| `TODO_DESCRIPTION_TOO_LONG` / `TODO_DUE_INVALID` | 描述超过 500 字或截止组合非法 | 保留表单并标记对应字段 |
+| `TODO_LIST_NOT_FOUND` / `TODO_LIST_DISABLED` | 清单不存在、不属于本人或已停用 | 刷新清单后重新选择 |
+| `TODO_NOT_FOUND` | 本人范围内未找到有效待办 | 返回列表或刷新，不区分无权限 |
+| `TODO_CREATE_FAILED` / `TODO_LIST_FAILED` / `TODO_UPDATE_FAILED` / `TODO_DELETE_FAILED` | 待办依赖写入或读取失败 | 保留表单；读操作可重试，写操作沿用原 requestId |
 | `RATE_LIMITED` | 调用过于频繁 | 按受控退避时间重试 |
 | `WEATHER_LOCATION_REQUIRED` | 未传位置且无默认城市 | 引导手动选择城市 |
 | `WEATHER_UNAVAILABLE` | 天气服务和合规缓存均不可用 | 局部错误，不影响账目/待办 |
+| `DELETION_REQUEST_NOT_FOUND` / `DELETION_REQUEST_ACTIVE` / `DELETION_CANNOT_CANCEL` | 删除申请不存在、已有生效申请或当前状态不能撤销 | 刷新删除状态，不重复提交 |
+| `DELETION_EXECUTOR_UNAUTHORIZED` / `DELETION_EXECUTION_FAILED` | 后台执行器未授权或批处理失败 | 仅后台告警和受控重试，前端不得调用 |
 | `DEPENDENCY_ERROR` | 数据库或外部依赖暂时失败 | 读请求可退避重试，写请求谨慎 |
 | `INTERNAL_ERROR` | 未分类服务端错误 | 展示通用提示并携 requestId |
 
-## 9. 版本与兼容性
+## 10. 版本与兼容性
 
 - MVP 使用文档版本 `v1`；action 名和响应 DTO 一旦被已发布客户端使用，不做破坏性原地修改。
 - 新增可选响应字段视为向后兼容；删除字段、改变类型/单位/枚举或语义必须建立 `v2` action 或迁移期。
 - 金额单位、时间格式、`ownerId` 规则、`dueKind` 组合和逻辑删除语义属于不可静默修改的契约。
 - 天气供应商可以替换，但 `WeatherResult` 必须保持稳定；供应商专属码只在 adapter 内存在。
 
-## 10. 接口待定项
+## 11. 接口待定项
 
-1. 天气供应商确定后，城市搜索能力、天气字段可用性和错误映射；
+1. Open-Meteo 免费开放接口仅适用于非商业用途且需署名；商业发布前必须重新确认许可或切换商业/自托管端点；
 2. 日期可回溯范围、未来商户字段长度及其他未实现业务字段长度；
 3. `upcoming` 固定 7 天是否符合产品原型；
 4. 基础预算是否首发；
 5. 用户删除的确认、冷静期、状态查询与撤销接口；
-6. 云函数超时、单用户限流阈值和天气配额；
+6. 生产级跨实例限流与天气配额告警；MVP 已有单实例、单用户每分钟搜索 10 次/天气 30 次保护；
 7. 首页账目摘要是否需要分类排行，MVP 当前只返回必要汇总。

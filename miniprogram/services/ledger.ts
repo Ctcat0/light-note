@@ -24,9 +24,10 @@ import type {
   ListTransactionsResult,
   Transaction,
   TransactionListItem,
+  TransactionListFilter,
   TransactionMonthSummary,
   TransactionStatus,
-  TransactionType,
+  SupportedTransactionType,
   UpdateExpenseTransactionRequest,
   UpdateExpenseTransactionResult,
   UpdateTransactionRequest,
@@ -44,7 +45,7 @@ type LedgerTransport = <TPayload extends object, TData>(
   options: CloudCallOptions<TPayload, TData>,
 ) => Promise<CloudCallResult<TData>>;
 
-function isTransactionType(value: unknown): value is TransactionType {
+function isTransactionType(value: unknown): value is SupportedTransactionType {
   return value === "expense" || value === "income";
 }
 
@@ -142,7 +143,7 @@ function parseAccount(value: unknown): Account {
     typeof value.isEnabled !== "boolean" ||
     !Number.isSafeInteger(value.version)
   ) {
-    throw new Error("账户响应格式无效");
+    throw new Error("资金渠道响应格式无效");
   }
 
   return {
@@ -227,7 +228,7 @@ function parseDeleteResult(value: unknown): DeleteTransactionResult {
 
 function parseCategoryList(
   value: unknown,
-  expectedType: TransactionType = "expense",
+  expectedType: SupportedTransactionType = "expense",
 ): ListCategoriesResult {
   if (!isRecord(value) || !Array.isArray(value.items)) {
     throw new Error("分类列表响应格式无效");
@@ -243,12 +244,12 @@ function parseCategoryList(
 
 function parseAccountList(value: unknown): ListAccountsResult {
   if (!isRecord(value) || !Array.isArray(value.items)) {
-    throw new Error("账户列表响应格式无效");
+    throw new Error("资金渠道列表响应格式无效");
   }
 
   const items = value.items.map(parseAccount);
   if (items.some((item) => !item.isEnabled)) {
-    throw new Error("账户列表包含已停用账户");
+    throw new Error("资金渠道列表包含已停用记录");
   }
 
   return { items };
@@ -337,7 +338,7 @@ function parseMonthlySummaryResult(value: unknown): GetMonthlySummaryResult {
 
 function parseTransactionList(
   value: unknown,
-  expectedType: TransactionType = "expense",
+  expectedFilter: TransactionListFilter = "expense",
 ): ListTransactionsResult {
   if (
     !isRecord(value) ||
@@ -358,7 +359,10 @@ function parseTransactionList(
     throw new Error("账单流水分页响应不一致");
   }
   const items = value.items.map(parseTransactionListItem);
-  if (items.some((item) => item.type !== expectedType)) {
+  if (
+    expectedFilter !== "all" &&
+    items.some((item) => item.type !== expectedFilter)
+  ) {
     throw new Error("账单流水包含类型不匹配的记录");
   }
   return {
@@ -375,9 +379,9 @@ function parseTransactionList(
 export function createLedgerService(
   transport: LedgerTransport = callCloudFunctionWithMetadata,
 ): {
-  listCategories(type: TransactionType): Promise<ListCategoriesResult>;
+  listCategories(type: SupportedTransactionType): Promise<ListCategoriesResult>;
   listExpenseCategories(): Promise<ListExpenseCategoriesResult>;
-  listAccounts(): Promise<ListAccountsResult>;
+  listAccounts(type: SupportedTransactionType): Promise<ListAccountsResult>;
   createTransaction(
     payload: CreateTransactionRequest,
     requestId: string,
@@ -455,8 +459,11 @@ export function createLedgerService(
       return result.data;
     },
 
-    async listAccounts(): Promise<ListAccountsResult> {
-      const payload: ListAccountsRequest = { includeDisabled: false };
+    async listAccounts(type): Promise<ListAccountsResult> {
+      const payload: ListAccountsRequest = {
+        transactionType: type,
+        includeDisabled: false,
+      };
       const result = await transport({
         functionName: CLOUD_FUNCTIONS.LEDGER,
         action: "listAccounts",
@@ -478,7 +485,13 @@ export function createLedgerService(
         payload,
         parseData: parseCreateResult,
       });
-      return result.data;
+      if (result.data.transaction.type !== "expense") {
+        throw new Error("新增支出响应类型不匹配");
+      }
+      return {
+        ...result.data,
+        transaction: { ...result.data.transaction, type: "expense" },
+      };
     },
 
     async getTransaction(transactionId: string): Promise<GetTransactionResult> {
@@ -550,7 +563,11 @@ export function createLedgerService(
     async listExpenseTransactions(
       payload: ListExpenseTransactionsRequest,
     ): Promise<ListExpenseTransactionsResult> {
-      const request: ListTransactionsRequest = { ...payload, type: "expense" };
+      const request: ListTransactionsRequest = {
+        ...payload,
+        filter: "expense",
+        categoryId: payload.categoryId ?? null,
+      };
       const result = await transport({
         functionName: CLOUD_FUNCTIONS.LEDGER,
         action: "listTransactions",
@@ -562,12 +579,16 @@ export function createLedgerService(
     },
 
     async listTransactions(payload): Promise<ListTransactionsResult> {
+      const request: ListTransactionsRequest = {
+        ...payload,
+        categoryId: payload.categoryId ?? null,
+      };
       const result = await transport({
         functionName: CLOUD_FUNCTIONS.LEDGER,
         action: "listTransactions",
         requestId: createRequestId(),
-        payload,
-        parseData: (value) => parseTransactionList(value, payload.type),
+        payload: request,
+        parseData: (value) => parseTransactionList(value, request.filter),
       });
       return result.data;
     },

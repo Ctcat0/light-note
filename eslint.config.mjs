@@ -11,6 +11,7 @@ export default tseslint.config(
       "shared/**/*.ts",
       "cloudfunctions/user/src/**/*.ts",
       "cloudfunctions/ledger/src/**/*.ts",
+      "cloudfunctions/todo/src/**/*.ts",
       "tests/**/*.ts"
     ],
     rules: {

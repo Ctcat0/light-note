@@ -1,11 +1,28 @@
 <view class="page-shell ledger-page">
   <view class="page-header">
-    <text class="page-title">记一笔{{transactionTypeLabel}}</text>
-    <text class="page-description">金额以分安全存储，保存由云函数校验分类、账户与用户归属。</text>
+    <text class="page-title">记一笔</text>
+    <text class="page-description">填写金额并选择{{transactionType === 'income' ? '收款方式' : '支付方式'}}，保存按钮会一直停留在底部。</text>
+  </view>
+
+  <view class="transaction-type-switch {{viewState === 'loading' ? 'disabled' : ''}}" role="tablist">
+    <view
+      class="transaction-type-option {{transactionType === 'expense' ? 'active' : ''}}"
+      role="tab"
+      aria-selected="{{transactionType === 'expense'}}"
+      data-type="expense"
+      bindtap="handleTransactionTypeChange"
+    >支出</view>
+    <view
+      class="transaction-type-option {{transactionType === 'income' ? 'active' : ''}}"
+      role="tab"
+      aria-selected="{{transactionType === 'income'}}"
+      data-type="income"
+      bindtap="handleTransactionTypeChange"
+    >收入</view>
   </view>
 
   <view class="page-state-card" wx:if="{{viewState === 'loading'}}">
-    <app-loading message="正在加载分类和账户" />
+    <app-loading message="正在加载分类和资金渠道" />
   </view>
 
   <view class="page-state-card" wx:elif="{{viewState === 'error'}}">
@@ -25,15 +42,13 @@
       />
       <app-empty
         wx:if="{{accounts.length === 0}}"
-        title="没有可用账户"
-        description="请确认默认账户数据后重试"
+        title="没有可用资金渠道"
+        description="请确认默认资金渠道数据后重试"
       />
       <button class="secondary-button" bindtap="handleRetry">重新加载</button>
     </view>
 
     <view class="form-card">
-      <view class="type-chip">{{transactionTypeLabel}}</view>
-
       <view class="amount-field">
         <text class="currency-symbol">¥</text>
         <input
@@ -65,7 +80,7 @@
       <text class="field-error" wx:if="{{formErrors.category}}">{{formErrors.category}}</text>
 
       <view class="field-row">
-        <text class="field-label">账户</text>
+        <text class="field-label">{{transactionType === 'income' ? '收款方式' : '支付方式'}}</text>
         <picker
           class="field-control"
           mode="selector"
@@ -102,7 +117,7 @@
           class="note-input"
           value="{{form.note}}"
           maxlength="200"
-          placeholder="例如：午餐"
+          placeholder="{{transactionType === 'income' ? '例如：7月工资' : '例如：午餐'}}"
           disabled="{{submitting}}"
           bindinput="handleNoteInput"
         />
@@ -114,6 +129,17 @@
         <button class="inline-retry" disabled="{{submitting}}" bindtap="handleRetrySubmission">重试保存</button>
       </view>
 
+    </view>
+
+    <view class="success-card" wx:if="{{savedTransaction}}" role="status">
+      <text class="success-title">{{successMessage}}</text>
+      <text class="success-detail">已写入并查询确认：¥{{savedAmountDisplay}}</text>
+      <text class="success-id">账单编号：{{savedTransaction.transactionId}}</text>
+      <button class="secondary-button" bindtap="handleBackToLedger">返回账单流水</button>
+      <button class="text-button" bindtap="handleCreateAnother">再记一笔</button>
+    </view>
+
+    <view class="form-action-dock" wx:if="{{viewState === 'ready' && !savedTransaction}}">
       <button
         class="save-button"
         type="primary"
@@ -123,14 +149,6 @@
       >
         {{submitting ? '正在保存' : '保存' + transactionTypeLabel}}
       </button>
-    </view>
-
-    <view class="success-card" wx:if="{{savedTransaction}}" role="status">
-      <text class="success-title">{{successMessage}}</text>
-      <text class="success-detail">已写入并查询确认：¥{{savedAmountDisplay}}</text>
-      <text class="success-id">账单编号：{{savedTransaction.transactionId}}</text>
-      <button class="secondary-button" bindtap="handleBackToLedger">返回账单流水</button>
-      <button class="text-button" bindtap="handleCreateAnother">再记一笔</button>
     </view>
   </block>
 </view>

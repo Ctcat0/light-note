@@ -1,23 +1,38 @@
 .home-page { padding-bottom: 48rpx; }
-.page-state-card, .empty-card, .diagnostic-panel { margin-top: 24rpx; overflow: hidden; border: 1rpx solid #e7e9ec; border-radius: 24rpx; background: #fff; }
-.summary-card { margin-top: 24rpx; padding: 34rpx 32rpx; border-radius: 26rpx; background: linear-gradient(145deg, #2f6f5e, #245748); color: #fff; box-shadow: 0 14rpx 36rpx rgba(36,87,72,.18); }
-.summary-header { display: flex; align-items: flex-start; justify-content: space-between; }
-.summary-caption, .balance-amount, .summary-item-label, .summary-item-value { display: block; }
-.summary-caption { color: rgba(255,255,255,.72); font-size: 25rpx; }
-.balance-amount { margin-top: 12rpx; font-size: 52rpx; font-weight: 700; }
-.ledger-link { margin: 0; padding: 0 22rpx; border: 1rpx solid rgba(255,255,255,.32); border-radius: 999rpx; background: rgba(255,255,255,.1); color: #fff; font-size: 24rpx; line-height: 58rpx; }
-.summary-grid { display: flex; margin-top: 34rpx; }
-.summary-item { flex: 1; padding: 22rpx 24rpx; border-radius: 18rpx; background: rgba(255,255,255,.1); }
-.summary-item + .summary-item { margin-left: 18rpx; }
-.summary-item-label { color: rgba(255,255,255,.7); font-size: 23rpx; }
-.summary-item-value { margin-top: 10rpx; font-size: 31rpx; font-weight: 650; }
-.quick-actions { display: flex; margin-top: 24rpx; }
-.quick-button { flex: 1; border-radius: 18rpx; font-size: 28rpx; font-weight: 600; }
-.quick-button + .quick-button { margin-left: 20rpx; }
+.page-state-card, .overview-card, .weather-card { margin-top: 24rpx; border: 1rpx solid #e7e9ec; border-radius: 24rpx; background: #fff; overflow: hidden; }
+.snapshot-notice { margin-top: 20rpx; padding: 16rpx 20rpx; border-radius: 14rpx; background: #fff7e8; color: #8a652d; font-size: 23rpx; line-height: 1.5; }
+.weather-card { display: block; width: 100% !important; min-width: 100% !important; max-width: 100% !important; margin-left: 0; margin-right: 0; padding: 30rpx 32rpx; background: linear-gradient(145deg, #477f98, #315f76); color: #fff; text-align: left; line-height: 1.4; box-shadow: 0 14rpx 32rpx rgba(49,95,118,.18); }
+.card-heading { display: flex; align-items: center; justify-content: space-between; font-size: 29rpx; font-weight: 650; }
+.card-link { width: auto !important; min-width: 0 !important; max-width: none !important; margin: 0; padding: 0; border: 0; background: transparent; color: #2f6f5e; font-size: 24rpx; font-weight: 500; line-height: 1.5; }
+.weather-card .card-link { color: rgba(255,255,255,.72); }
+.weather-main { display: flex; align-items: center; margin-top: 18rpx; }
+.weather-temperature { margin-right: 28rpx; font-size: 72rpx; font-weight: 700; }
+.weather-condition, .weather-range { display: block; }
+.weather-condition { font-size: 29rpx; font-weight: 600; }
+.weather-range { margin-top: 8rpx; color: rgba(255,255,255,.72); font-size: 23rpx; }
+.weather-time { display: block; margin-top: 16rpx; color: rgba(255,255,255,.62); font-size: 22rpx; }
+.weather-provider { display: block; margin-top: 8rpx; color: rgba(255,255,255,.54); font-size: 20rpx; }
+.overview-card { padding: 30rpx; }
+.todo-counts { display: flex; gap: 20rpx; margin-top: 20rpx; color: #646a71; font-size: 24rpx; }
+.overdue { color: #b65345; }
+.home-todos { margin-top: 18rpx; border-top: 1rpx solid #eef0f2; }
+.home-todo { display: flex; align-items: center; min-width: 0; padding: 18rpx 0; border-bottom: 1rpx solid #eef0f2; }
+.todo-check { flex: 0 0 48rpx; width: 48rpx !important; min-width: 48rpx !important; max-width: 48rpx !important; height: 48rpx; margin: 0 16rpx 0 0; padding: 0; border: 2rpx solid #87aa9e; border-radius: 50%; background: #f4faf7; color: #2f6f5e; font-size: 20rpx; line-height: 44rpx; }
+.todo-title { flex: 1; min-width: 0; overflow: hidden; color: #292e33; font-size: 26rpx; text-overflow: ellipsis; white-space: nowrap; }
+.todo-due { margin-left: 14rpx; color: #7a8087; font-size: 22rpx; }
+.todo-due.overdue { color: #b65345; }
+.module-empty, .module-error { display: block; margin-top: 20rpx; padding: 22rpx; border-radius: 14rpx; background: #f6f7f8; color: #70767d; font-size: 24rpx; line-height: 1.5; }
+.weather-card .module-error { background: rgba(255,255,255,.12); color: rgba(255,255,255,.82); }
+.today-ledger { display: flex; gap: 18rpx; margin-top: 22rpx; }
+.today-ledger view { flex: 1; padding: 22rpx; border-radius: 16rpx; background: #f6f7f8; color: #6d737a; font-size: 23rpx; }
+.today-ledger text { display: block; }
+.expense-value, .income-value { margin-top: 10rpx; font-size: 31rpx; font-weight: 650; }
+.expense-value { color: #a34b3f; }
+.income-value { color: #2f6f5e; }
+.month-ledger { display: flex; flex-wrap: wrap; gap: 12rpx 24rpx; margin-top: 20rpx; color: #70767d; font-size: 23rpx; }
+.month-ledger .balance { color: #30363b; font-weight: 650; }
+.quick-actions { display: flex; gap: 14rpx; margin-top: 24rpx; }
+.quick-button { flex: 1; min-width: 0; margin: 0; padding: 0; border-radius: 16rpx; font-size: 26rpx; line-height: 76rpx; font-weight: 600; }
 .quick-button.expense { background: #fff1ee; color: #a34b3f; }
 .quick-button.income { background: #eaf5ef; color: #2f6f5e; }
-.empty-card { padding-bottom: 16rpx; }
-.diagnostic-panel, .diagnostic-meta { padding: 32rpx; }
-.diagnostic-title { display: block; margin-bottom: 20rpx; font-size: 32rpx; font-weight: 600; }
-.diagnostic-row { display: flex; justify-content: space-between; padding: 14rpx 0; border-bottom: 1rpx solid #eef0f2; color: #4f555d; font-size: 26rpx; }
-.diagnostic-request, .diagnostic-note, .diagnostic-meta text { display: block; margin-top: 18rpx; color: #70757d; font-size: 24rpx; line-height: 1.5; word-break: break-all; }
+.quick-button.todo { background: #eef2fa; color: #52698d; }

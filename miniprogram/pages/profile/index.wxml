@@ -1,21 +1,61 @@
-<view class="page-shell">
+<view class="page-shell profile-page">
   <view class="page-header">
-    <text class="page-title">我的</text>
-    <text class="page-description">用户设置、隐私和数据管理将在独立任务中实现。</text>
+    <text class="page-title">我的 / 设置</text>
+    <text class="page-description">管理常用记账方式、天气偏好、隐私和个人数据。</text>
   </view>
 
-  <view class="page-state-card">
-    <app-loading wx:if="{{viewState === 'loading'}}" message="正在加载设置" />
-    <app-error-state
-      wx:elif="{{viewState === 'error'}}"
-      message="{{errorMessage}}"
-      bind:retry="handleRetry"
-    />
-    <app-empty
-      wx:else
-      title="设置骨架已就绪"
-      description="当前未请求用户资料或其他隐私数据"
-    />
+  <view class="page-state-card" wx:if="{{viewState === 'loading'}}">
+    <app-loading message="正在加载设置" />
   </view>
+  <view class="page-state-card" wx:elif="{{viewState === 'error'}}">
+    <app-error-state title="设置加载失败" message="{{errorMessage}}" bind:retry="handleRetry" />
+  </view>
+  <view class="page-state-card" wx:elif="{{viewState === 'empty'}}">
+    <app-empty title="没有可用的固定资金渠道" description="请重新初始化默认数据后重试" />
+    <button class="setting-button" bindtap="handleRetry">重新加载</button>
+  </view>
+
+  <block wx:else>
+    <view class="settings-card" wx:if="{{settings}}">
+      <text class="section-title">记账偏好</text>
+      <picker mode="selector" range="{{transactionTypeOptions}}" value="{{defaultTransactionTypeIndex}}" disabled="{{settingsDisabled || savingGroup}}" bindchange="handleDefaultTypeChange">
+        <view class="setting-row"><text>默认记账类型</text><text class="setting-value">{{transactionTypeOptions[defaultTransactionTypeIndex]}} ›</text></view>
+      </picker>
+      <picker mode="selector" range="{{accounts}}" range-key="name" value="{{defaultExpenseAccountIndex}}" disabled="{{settingsDisabled || savingGroup}}" bindchange="handleExpenseAccountChange">
+        <view class="setting-row"><text>默认支付方式</text><text class="setting-value">{{accounts[defaultExpenseAccountIndex].name || '请选择'}} ›</text></view>
+      </picker>
+      <picker mode="selector" range="{{accounts}}" range-key="name" value="{{defaultIncomeAccountIndex}}" disabled="{{settingsDisabled || savingGroup}}" bindchange="handleIncomeAccountChange">
+        <view class="setting-row"><text>默认收款方式</text><text class="setting-value">{{accounts[defaultIncomeAccountIndex].name || '请选择'}} ›</text></view>
+      </picker>
+    </view>
+
+    <view class="settings-card" wx:if="{{settings}}">
+      <text class="section-title">天气偏好</text>
+      <view class="setting-row action-row" bindtap="handleChooseCity">
+        <text>默认天气城市</text>
+        <text class="setting-value">{{settings.defaultLocation.displayName || '未选择'}} ›</text>
+      </view>
+      <view class="setting-row">
+        <view><text>优先使用定位</text><text class="setting-note">开启后，进入天气页时优先尝试当前位置</text></view>
+        <switch checked="{{settings.preferGeolocation}}" disabled="{{settingsDisabled || savingGroup}}" color="#2f6f5e" bindchange="handlePreferLocationChange" />
+      </view>
+      <button class="setting-button" disabled="{{savingGroup}}" bindtap="handleClearWeatherCache">清除天气缓存</button>
+      <button class="setting-button" disabled="{{savingGroup}}" bindtap="handleClearLocalCaches">清除本地可再生缓存</button>
+    </view>
+
+    <view class="settings-card">
+      <text class="section-title">隐私与说明</text>
+      <view class="setting-row action-row" data-type="privacy" bindtap="handleOpenLegal"><text>隐私政策</text><text class="setting-value">›</text></view>
+      <view class="setting-row action-row" data-type="agreement" bindtap="handleOpenLegal"><text>用户协议</text><text class="setting-value">›</text></view>
+      <view class="setting-row action-row" data-type="about" bindtap="handleOpenLegal"><text>关于轻记</text><text class="setting-value">版本 {{appVersion}} ›</text></view>
+    </view>
+
+    <view class="danger-card">
+      <text class="section-title danger-title">个人数据删除</text>
+      <text class="deletion-description">{{deletionStatusText}}</text>
+      <button wx:if="{{deletionRequest.canCancel}}" class="secondary-danger-button" loading="{{savingGroup === 'deletion'}}" disabled="{{savingGroup}}" bindtap="handleCancelDeletion">撤销删除申请</button>
+      <button wx:elif="{{!settingsDisabled}}" class="danger-button" loading="{{savingGroup === 'deletion'}}" disabled="{{savingGroup}}" bindtap="handleRequestDeletion">申请删除个人数据</button>
+      <button wx:else class="danger-button" disabled="true">删除流程进行中</button>
+    </view>
+  </block>
 </view>
-

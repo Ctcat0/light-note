@@ -2,10 +2,14 @@ import type { ApiErrorCode } from "../../../../shared/types/api";
 import type {
   AccountType,
   CategoryType,
+  DefaultTransactionType,
   DefaultLocation,
   Theme,
 } from "../../../../shared/types/user";
-import type { TransactionType } from "../../../../shared/types/transaction";
+import type {
+  SupportedTransactionType,
+  TransactionListFilter,
+} from "../../../../shared/types/transaction";
 
 export type StoredUserStatus =
   | "active"
@@ -24,8 +28,11 @@ export interface UserSettingsRecord {
   ownerId: string;
   currency: "CNY";
   timezone: string;
-  defaultAccountId: string | null;
+  defaultTransactionType: DefaultTransactionType;
+  defaultExpenseAccountId: string;
+  defaultIncomeAccountId: string;
   defaultLocation: DefaultLocation | null;
+  preferGeolocation: boolean;
   showWeather: boolean;
   showBudget: boolean;
   theme: Theme;
@@ -68,7 +75,7 @@ export interface AccountRecord {
 export interface TransactionRecord {
   _id: string;
   ownerId: string;
-  type: TransactionType;
+  type: SupportedTransactionType;
   amountInCents: number;
   categoryId: string;
   accountId: string;
@@ -91,6 +98,15 @@ export interface TransactionRecord {
   lastMutationPreviousOccurredAt?: Date;
 }
 
+export interface TransactionAggregate {
+  amountInCents: number;
+  count: number;
+}
+
+export interface CategoryTransactionAggregate extends TransactionAggregate {
+  categoryId: string;
+}
+
 export interface LedgerTransactionStore {
   getUser(userId: string): Promise<UserRecord | null>;
   getTransaction(transactionId: string): Promise<TransactionRecord | null>;
@@ -105,13 +121,14 @@ export interface LedgerStore {
   getSettingsByOwner(ownerId: string): Promise<UserSettingsRecord | null>;
   listCategories(
     ownerId: string,
-    type: TransactionType,
+    type: SupportedTransactionType,
   ): Promise<CategoryRecord[]>;
   listAccounts(ownerId: string): Promise<AccountRecord[]>;
   getTransaction(transactionId: string): Promise<TransactionRecord | null>;
   listTransactions(options: {
     ownerId: string;
-    type: TransactionType;
+    filter: TransactionListFilter;
+    categoryId: string | null;
     startAt: Date;
     endAt: Date;
     pageSize: number;
@@ -119,10 +136,22 @@ export interface LedgerStore {
   }): Promise<TransactionRecord[]>;
   sumTransactions(options: {
     ownerId: string;
-    type: TransactionType;
+    type: SupportedTransactionType;
     startAt: Date;
     endAt: Date;
   }): Promise<number>;
+  aggregateTransactions(options: {
+    ownerId: string;
+    type: SupportedTransactionType;
+    startAt: Date;
+    endAt: Date;
+  }): Promise<TransactionAggregate>;
+  aggregateTransactionsByCategory(options: {
+    ownerId: string;
+    type: SupportedTransactionType;
+    startAt: Date;
+    endAt: Date;
+  }): Promise<CategoryTransactionAggregate[]>;
   getCategoriesByIds(
     ownerId: string,
     categoryIds: string[],

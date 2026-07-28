@@ -1,0 +1,180 @@
+.statistics-page {
+  padding-bottom: 48rpx;
+}
+
+.statistics-header,
+.section-title-row,
+.trend-heading,
+.category-heading,
+.partial-error,
+.section-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.statistics-header {
+  margin-bottom: 24rpx;
+}
+
+.page-description {
+  display: block;
+  margin-top: 8rpx;
+}
+
+.month-picker,
+.period-tab,
+.category-filter-chip {
+  color: #2f6f5e;
+  background: #edf5f2;
+  border-radius: 999rpx;
+}
+
+.month-picker {
+  padding: 14rpx 20rpx;
+  font-size: 26rpx;
+}
+
+.statistics-card,
+.partial-error,
+.empty-banner,
+.refreshing-tip {
+  margin-bottom: 24rpx;
+  padding: 28rpx;
+  background: #fff;
+  border-radius: 20rpx;
+}
+
+.partial-error {
+  color: #9b4b32;
+  background: #fff4ef;
+}
+
+.partial-error button,
+.section-error button {
+  margin: 0 0 0 16rpx;
+}
+
+.refreshing-tip,
+.empty-banner,
+.section-empty {
+  color: #7a7f87;
+  text-align: center;
+}
+
+.section-title {
+  font-size: 30rpx;
+  font-weight: 600;
+}
+
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16rpx;
+  margin-top: 24rpx;
+}
+
+.summary-item {
+  display: flex;
+  flex-direction: column;
+  gap: 8rpx;
+  min-width: 0;
+  color: #7a7f87;
+  font-size: 22rpx;
+}
+
+.summary-amount {
+  color: #20242a;
+  font-size: 28rpx;
+  font-weight: 600;
+}
+
+.summary-item.income .summary-amount { color: #2f7d58; }
+.summary-item.expense .summary-amount { color: #b5543c; }
+
+.period-tabs {
+  display: flex;
+  gap: 10rpx;
+}
+
+.period-tab {
+  padding: 8rpx 16rpx;
+  color: #68736f;
+  font-size: 22rpx;
+}
+
+.period-tab.active {
+  color: #fff;
+  background: #2f6f5e;
+}
+
+.trend-list,
+.category-list {
+  margin-top: 24rpx;
+}
+
+.trend-row,
+.category-row {
+  padding: 20rpx 0;
+  border-top: 1rpx solid #edf0f2;
+}
+
+.trend-row:first-child,
+.category-row:first-child {
+  border-top: 0;
+}
+
+.trend-heading,
+.category-heading {
+  gap: 20rpx;
+  margin-bottom: 14rpx;
+  font-size: 24rpx;
+}
+
+.trend-heading text:last-child,
+.category-heading text:last-child {
+  color: #6f757d;
+  text-align: right;
+}
+
+.bar-line {
+  display: grid;
+  grid-template-columns: 32rpx minmax(100rpx, 1fr) 150rpx;
+  gap: 12rpx;
+  align-items: center;
+  margin-top: 10rpx;
+  font-size: 22rpx;
+  color: #6f757d;
+}
+
+.bar-line text:last-child {
+  text-align: right;
+}
+
+.bar-track,
+.category-track {
+  overflow: hidden;
+  height: 14rpx;
+  background: #edf0f2;
+  border-radius: 999rpx;
+}
+
+.bar,
+.category-bar {
+  height: 100%;
+  border-radius: 999rpx;
+}
+
+.bar.income,
+.category-bar.income { background: #54a57d; }
+.bar.expense,
+.category-bar.expense { background: #dc8068; }
+
+.section-error {
+  margin-top: 22rpx;
+  color: #9b4b32;
+}
+
+.section-empty {
+  padding: 28rpx 0 8rpx;
+}

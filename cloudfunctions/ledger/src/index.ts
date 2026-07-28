@@ -1,14 +1,19 @@
 import * as cloud from "wx-server-sdk";
 import type { ApiResponse } from "../../../shared/types/api";
 import type {
-  CreateExpenseTransactionResult,
-  DeleteExpenseTransactionResult,
+  CategoryStatisticsResult,
+  StatisticsMonthSummary,
+  StatisticsTrendResult,
+} from "../../../shared/types/statistics";
+import type {
+  CreateTransactionResult,
+  DeleteTransactionResult,
   GetTransactionResult,
   GetMonthlySummaryResult,
   ListAccountsResult,
-  ListExpenseCategoriesResult,
-  ListExpenseTransactionsResult,
-  UpdateExpenseTransactionResult,
+  ListCategoriesResult,
+  ListTransactionsResult,
+  UpdateTransactionResult,
 } from "../../../shared/types/transaction";
 import { createLedgerFunctionHandler } from "./application/handler";
 import {
@@ -17,14 +22,17 @@ import {
 } from "./infrastructure/cloudbase-store";
 
 type LedgerResponseData =
-  | CreateExpenseTransactionResult
-  | UpdateExpenseTransactionResult
-  | DeleteExpenseTransactionResult
+  | CreateTransactionResult
+  | UpdateTransactionResult
+  | DeleteTransactionResult
   | GetTransactionResult
   | GetMonthlySummaryResult
   | ListAccountsResult
-  | ListExpenseCategoriesResult
-  | ListExpenseTransactionsResult;
+  | ListCategoriesResult
+  | ListTransactionsResult
+  | StatisticsMonthSummary
+  | StatisticsTrendResult
+  | CategoryStatisticsResult;
 
 cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV as unknown as string });
 

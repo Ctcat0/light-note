@@ -134,7 +134,7 @@ Page<EditPageData, EditPageMethods>({
       }
       const [categoryResult, accountResult] = await Promise.all([
         ledgerService.listCategories(detail.transaction.type),
-        ledgerService.listAccounts(),
+        ledgerService.listAccounts(detail.transaction.type),
       ]);
       if (this.data.destroyed) return;
       const transactionTypeLabel =

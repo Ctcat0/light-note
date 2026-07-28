@@ -1,0 +1,4 @@
+.legal-card { padding: 32rpx; border: 1rpx solid #e7e9ec; border-radius: 24rpx; background: #fff; }
+.legal-heading { display: block; margin-top: 30rpx; color: #252a2f; font-size: 30rpx; font-weight: 650; }
+.legal-heading:first-child { margin-top: 0; }
+.legal-text { display: block; margin-top: 16rpx; color: #626970; font-size: 27rpx; line-height: 1.8; }

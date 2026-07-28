@@ -7,7 +7,10 @@ import type {
   UserRecord,
   UserSettingsRecord,
 } from "../../cloudfunctions/ledger/src/domain/types";
-import type { TransactionType } from "../../shared/types/transaction";
+import type {
+  SupportedTransactionType,
+  TransactionListFilter,
+} from "../../shared/types/transaction";
 
 function cloneRecord<TValue>(value: TValue): TValue {
   return { ...value } as TValue;
@@ -47,7 +50,7 @@ export class InMemoryLedgerStore implements LedgerStore, LedgerTransactionStore 
 
   async listCategories(
     ownerId: string,
-    type: TransactionType,
+    type: SupportedTransactionType,
   ): Promise<CategoryRecord[]> {
     return [...this.categories.values()]
       .filter(
@@ -68,7 +71,8 @@ export class InMemoryLedgerStore implements LedgerStore, LedgerTransactionStore 
 
   async listTransactions(options: {
     ownerId: string;
-    type: TransactionType;
+    filter: TransactionListFilter;
+    categoryId: string | null;
     startAt: Date;
     endAt: Date;
     pageSize: number;
@@ -83,7 +87,10 @@ export class InMemoryLedgerStore implements LedgerStore, LedgerTransactionStore 
         const occurredAt = item.occurredAt.getTime();
         const inRange =
           item.ownerId === options.ownerId &&
-          item.type === options.type &&
+          (options.filter === "all"
+            ? item.type === "expense" || item.type === "income"
+            : item.type === options.filter) &&
+          (options.categoryId === null || item.categoryId === options.categoryId) &&
           !item.isDeleted &&
           occurredAt >= options.startAt.getTime() &&
           occurredAt < options.endAt.getTime();
@@ -106,7 +113,7 @@ export class InMemoryLedgerStore implements LedgerStore, LedgerTransactionStore 
 
   async sumTransactions(options: {
     ownerId: string;
-    type: TransactionType;
+    type: SupportedTransactionType;
     startAt: Date;
     endAt: Date;
   }): Promise<number> {
@@ -124,6 +131,58 @@ export class InMemoryLedgerStore implements LedgerStore, LedgerTransactionStore 
           item.occurredAt < options.endAt,
       )
       .reduce((total, item) => total + item.amountInCents, 0);
+  }
+
+  async aggregateTransactions(options: {
+    ownerId: string;
+    type: SupportedTransactionType;
+    startAt: Date;
+    endAt: Date;
+  }): Promise<{ amountInCents: number; count: number }> {
+    const items = this.getAggregateItems(options);
+    return {
+      amountInCents: items.reduce((total, item) => total + item.amountInCents, 0),
+      count: items.length,
+    };
+  }
+
+  async aggregateTransactionsByCategory(options: {
+    ownerId: string;
+    type: SupportedTransactionType;
+    startAt: Date;
+    endAt: Date;
+  }): Promise<Array<{ categoryId: string; amountInCents: number; count: number }>> {
+    const grouped = new Map<string, { amountInCents: number; count: number }>();
+    for (const item of this.getAggregateItems(options)) {
+      const current = grouped.get(item.categoryId) ?? { amountInCents: 0, count: 0 };
+      current.amountInCents += item.amountInCents;
+      current.count += 1;
+      grouped.set(item.categoryId, current);
+    }
+    return [...grouped.entries()].map(([categoryId, value]) => ({
+      categoryId,
+      ...value,
+    }));
+  }
+
+  private getAggregateItems(options: {
+    ownerId: string;
+    type: SupportedTransactionType;
+    startAt: Date;
+    endAt: Date;
+  }): TransactionRecord[] {
+    if (this.failSummary) {
+      this.failSummary = false;
+      throw new Error("simulated summary failure");
+    }
+    return [...this.transactions.values()].filter(
+      (item) =>
+        item.ownerId === options.ownerId &&
+        item.type === options.type &&
+        !item.isDeleted &&
+        item.occurredAt >= options.startAt &&
+        item.occurredAt < options.endAt,
+    );
   }
 
   async getCategoriesByIds(
@@ -204,6 +263,7 @@ export class InMemoryLedgerStore implements LedgerStore, LedgerTransactionStore 
   async getAccount(accountId: string): Promise<AccountRecord | null> {
     return this.accounts.get(accountId) ?? null;
   }
+
 }
 
 export function seedLedgerUser(
@@ -241,12 +301,15 @@ export function seedLedgerUser(
     ownerId: userId,
     currency: "CNY",
     timezone: "Asia/Shanghai",
-    defaultAccountId: accountId,
+    defaultTransactionType: "expense",
+    defaultExpenseAccountId: accountId,
+    defaultIncomeAccountId: accountId,
     defaultLocation: null,
+    preferGeolocation: false,
     showWeather: true,
     showBudget: false,
     theme: "system",
-    initializationVersion: 1,
+    initializationVersion: 2,
     createdAt: now,
     updatedAt: now,
     version: 1,

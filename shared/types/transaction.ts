@@ -2,11 +2,15 @@ import type { Account, Category } from "./user";
 
 export type TransactionType = "expense" | "income";
 
+export type SupportedTransactionType = TransactionType;
+
+export type TransactionListFilter = "all" | SupportedTransactionType;
+
 export type TransactionStatus = "active" | "deleted";
 
 export interface Transaction {
   transactionId: string;
-  type: TransactionType;
+  type: SupportedTransactionType;
   amountInCents: number;
   categoryId: string;
   accountId: string;
@@ -24,7 +28,7 @@ export interface Transaction {
 }
 
 export interface CreateTransactionRequest {
-  type: TransactionType;
+  type: SupportedTransactionType;
   amountInCents: number;
   categoryId: string;
   accountId: string;
@@ -50,8 +54,18 @@ export type CreateIncomeTransactionRequest = CreateTransactionRequest & {
   includeInBudget: false;
 };
 
-export type CreateExpenseTransactionResult = CreateTransactionResult;
-export type CreateIncomeTransactionResult = CreateTransactionResult;
+export type CreateExpenseTransactionResult = Omit<
+  CreateTransactionResult,
+  "transaction"
+> & {
+  transaction: Transaction & { type: "expense" };
+};
+export type CreateIncomeTransactionResult = Omit<
+  CreateTransactionResult,
+  "transaction"
+> & {
+  transaction: Transaction & { type: "income" };
+};
 
 export interface GetTransactionRequest {
   transactionId: string;
@@ -117,7 +131,7 @@ export type DeleteExpenseTransactionResult = DeleteTransactionResult;
 export type DeleteIncomeTransactionResult = DeleteTransactionResult;
 
 export interface ListCategoriesRequest {
-  type: TransactionType;
+  type: SupportedTransactionType;
   includeDisabled: false;
 }
 
@@ -135,6 +149,7 @@ export type ListExpenseCategoriesResult = ListCategoriesResult;
 export type ListIncomeCategoriesResult = ListCategoriesResult;
 
 export interface ListAccountsRequest {
+  transactionType: SupportedTransactionType;
   includeDisabled: false;
 }
 
@@ -155,7 +170,7 @@ export interface PaginationResult<TItem> {
 
 export interface TransactionListItem {
   transactionId: string;
-  type: TransactionType;
+  type: SupportedTransactionType;
   amountInCents: number;
   categoryId: string;
   categoryName: string;
@@ -188,7 +203,8 @@ export interface GetMonthlySummaryResult {
 }
 
 export interface ListTransactionsRequest {
-  type: TransactionType;
+  filter: TransactionListFilter;
+  categoryId?: string | null;
   year: number;
   month: number;
   pageSize: number;
@@ -202,11 +218,11 @@ export interface ListTransactionsResult
 
 export type ListExpenseTransactionsRequest = Omit<
   ListTransactionsRequest,
-  "type"
+  "filter"
 >;
 export type ListIncomeTransactionsRequest = Omit<
   ListTransactionsRequest,
-  "type"
+  "filter"
 >;
 export type ListExpenseTransactionsResult = ListTransactionsResult;
 export type ListIncomeTransactionsResult = ListTransactionsResult;

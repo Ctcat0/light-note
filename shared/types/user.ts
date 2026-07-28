@@ -5,6 +5,7 @@ export type CategoryType = "expense" | "income";
 export type AccountType = "wechat" | "alipay" | "bank" | "cash" | "other";
 
 export type Theme = "system" | "light" | "dark";
+export type DefaultTransactionType = "expense" | "income";
 
 export interface DefaultLocation {
   locationKey: string;
@@ -22,8 +23,11 @@ export interface User {
 export interface UserSettings {
   currency: "CNY";
   timezone: string;
-  defaultAccountId: string | null;
+  defaultTransactionType: DefaultTransactionType;
+  defaultExpenseAccountId: string;
+  defaultIncomeAccountId: string;
   defaultLocation: DefaultLocation | null;
+  preferGeolocation: boolean;
   showWeather: boolean;
   showBudget: boolean;
   theme: Theme;
@@ -55,6 +59,31 @@ export interface Account {
 }
 
 export type UserInitPayload = Record<string, never>;
+
+export type GetUserSettingsPayload = Record<string, never>;
+
+export interface UpdateLedgerSettingsPayload {
+  expectedVersion: number;
+  group: "ledger";
+  changes: {
+    defaultTransactionType?: DefaultTransactionType;
+    defaultExpenseAccountId?: string;
+    defaultIncomeAccountId?: string;
+  };
+}
+
+export interface UpdateWeatherSettingsPayload {
+  expectedVersion: number;
+  group: "weather";
+  changes: {
+    defaultLocation?: DefaultLocation | null;
+    preferGeolocation?: boolean;
+  };
+}
+
+export type UpdateUserSettingsPayload =
+  | UpdateLedgerSettingsPayload
+  | UpdateWeatherSettingsPayload;
 
 export interface UserInitializationStatus {
   userCreated: boolean;

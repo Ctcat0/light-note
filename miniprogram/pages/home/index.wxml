@@ -1,70 +1,50 @@
 <view class="page-shell home-page">
   <view class="page-header">
-    <text class="page-title">首页</text>
-    <text class="page-description">先聚合本月收支，天气和待办将在后续任务接入。</text>
+    <text class="page-title">今天</text>
+    <text class="page-description">{{dateLabel}} · 天气、待办和收支都在这里</text>
   </view>
 
-  <view class="page-state-card" wx:if="{{viewState === 'loading'}}">
-    <app-loading message="正在加载本月收支" />
-  </view>
-
-  <view class="page-state-card" wx:elif="{{viewState === 'error'}}">
-    <app-error-state
-      title="本月收支加载失败"
-      message="{{errorMessage}}"
-      bind:retry="handleRetry"
-    />
-    <view wx:if="{{diagnosticsEnabled}}" class="diagnostic-meta">
-      <text>错误码：{{errorCode}}</text>
-      <text>requestId：{{requestId || '未返回'}}</text>
-    </view>
-  </view>
+  <view class="snapshot-notice" wx:if="{{snapshotNotice}}">{{snapshotNotice}}</view>
+  <view class="page-state-card" wx:if="{{viewState === 'loading'}}"><app-loading message="正在加载今日概览" /></view>
+  <view class="page-state-card" wx:elif="{{viewState === 'error'}}"><app-error-state title="首页加载失败" message="{{errorMessage}}" bind:retry="handleRetry" /></view>
+  <view class="page-state-card" wx:elif="{{viewState === 'empty'}}"><app-empty title="今天还没有内容" description="可以先记一笔或添加待办" /></view>
 
   <block wx:else>
-    <view class="summary-card">
-      <view class="summary-header">
-        <view>
-          <text class="summary-caption">{{monthLabel}}结余</text>
-          <text class="balance-amount">{{monthBalanceDisplay}}</text>
-        </view>
-        <button class="ledger-link" bindtap="handleOpenLedger">查看流水</button>
+    <button class="weather-card" bindtap="handleOpenWeather">
+      <view class="card-heading"><text>{{weatherCity}}</text><text class="card-link">切换城市 ›</text></view>
+      <view wx:if="{{weatherAvailable}}" class="weather-main">
+        <text class="weather-temperature">{{weatherTemperature}}</text>
+        <view><text class="weather-condition">{{weatherCondition}}</text><text class="weather-range">今日 {{weatherRange}}</text></view>
       </view>
-      <view class="summary-grid">
-        <view class="summary-item income">
-          <text class="summary-item-label">本月收入</text>
-          <text class="summary-item-value">{{monthIncomeDisplay}}</text>
+      <view wx:else class="module-error">{{weatherMessage}}</view>
+      <text wx:if="{{weatherAvailable}}" class="weather-time">{{weatherStale ? '缓存天气' : '更新'}} {{weatherUpdated}}</text>
+      <text wx:if="{{weatherAvailable}}" class="weather-provider">天气数据：Open-Meteo</text>
+    </button>
+
+    <view class="overview-card">
+      <view class="card-heading"><text>今日待办</text><button class="card-link" bindtap="handleOpenTodo">查看全部 ›</button></view>
+      <view wx:if="{{todosAvailable}}">
+        <view class="todo-counts"><text>待完成 {{todayPending}}</text><text>已完成 {{todayCompleted}} / {{todayTotal}}</text><text wx:if="{{overdueCount > 0}}" class="overdue">逾期 {{overdueCount}}</text></view>
+        <view wx:if="{{todoItems.length > 0}}" class="home-todos">
+          <view wx:for="{{todoItems}}" wx:key="todoId" class="home-todo">
+            <button class="todo-check" loading="{{updatingTodoId === item.todoId}}" data-id="{{item.todoId}}" bindtap="handleCompleteTodo">✓</button>
+            <text class="todo-title">{{item.title}}</text><text class="todo-due {{item.isOverdue ? 'overdue' : ''}}">{{item.dueDisplay}}</text>
+          </view>
         </view>
-        <view class="summary-item expense">
-          <text class="summary-item-label">本月支出</text>
-          <text class="summary-item-value">{{monthExpenseDisplay}}</text>
-        </view>
+        <text wx:else class="module-empty">今天没有未完成或逾期待办</text>
       </view>
+      <view wx:else class="module-error">{{todosMessage}}</view>
     </view>
 
-    <view class="quick-actions">
-      <button class="quick-button expense" bindtap="handleAddExpense">记支出</button>
-      <button class="quick-button income" bindtap="handleAddIncome">记收入</button>
+    <view class="overview-card ledger-card">
+      <view class="card-heading"><text>收支摘要</text><button class="card-link" bindtap="handleOpenLedger">查看流水 ›</button></view>
+      <view wx:if="{{ledgerAvailable}}">
+        <view class="today-ledger"><view><text>今日支出</text><text class="expense-value">{{todayExpenseDisplay}}</text></view><view><text>今日收入</text><text class="income-value">{{todayIncomeDisplay}}</text></view></view>
+        <view class="month-ledger"><text>本月收入 {{monthIncomeDisplay}}</text><text>本月支出 {{monthExpenseDisplay}}</text><text class="balance">结余 {{monthBalanceDisplay}}</text></view>
+      </view>
+      <view wx:else class="module-error">{{ledgerMessage}}</view>
     </view>
 
-    <view class="empty-card" wx:if="{{viewState === 'empty'}}">
-      <app-empty
-        title="{{monthLabel}}暂无收支"
-        description="记录第一笔收入或支出后，首页会自动更新汇总"
-      />
-    </view>
+    <view class="quick-actions"><button class="quick-button expense" bindtap="handleAddExpense">记支出</button><button class="quick-button income" bindtap="handleAddIncome">记收入</button><button class="quick-button todo" bindtap="handleAddTodo">加待办</button></view>
   </block>
-
-  <view wx:if="{{diagnosticsEnabled && identityAvailable}}" class="diagnostic-panel">
-    <text class="diagnostic-title">开发环境 · 用户初始化诊断</text>
-    <view class="diagnostic-row"><text>微信身份</text><text>已获取</text></view>
-    <view class="diagnostic-row"><text>新建用户</text><text>{{userCreated ? '是' : '否'}}</text></view>
-    <view class="diagnostic-row"><text>新建支出分类</text><text>{{expenseCategoriesCreated}}</text></view>
-    <view class="diagnostic-row"><text>新建收入分类</text><text>{{incomeCategoriesCreated}}</text></view>
-    <view class="diagnostic-row"><text>新建账户</text><text>{{accountsCreated}}</text></view>
-    <view class="diagnostic-row"><text>默认账户</text><text>{{defaultAccountConfigured ? '已设置' : '未设置'}}</text></view>
-    <view class="diagnostic-row"><text>重复初始化</text><text>{{repeatedInitialization ? '是' : '否'}}</text></view>
-    <view class="diagnostic-row"><text>错误码</text><text>{{errorCode}}</text></view>
-    <view class="diagnostic-request"><text>requestId：{{requestId}}</text></view>
-    <text class="diagnostic-note">诊断仅在开发版显示，不包含 OPENID。</text>
-  </view>
 </view>

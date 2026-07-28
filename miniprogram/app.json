@@ -4,7 +4,11 @@
     "pages/ledger/index",
     "pages/transaction-create/index",
     "pages/transaction-edit/index",
+    "pages/statistics/index",
     "pages/todo/index",
+    "pages/todo-edit/index",
+    "pages/weather/index",
+    "pages/legal/index",
     "pages/profile/index"
   ],
   "window": {
@@ -43,5 +47,13 @@
     "app-empty": "/components/empty/index",
     "app-error-state": "/components/error-state/index"
   },
+  "permission": {
+    "scope.userLocation": {
+      "desc": "仅在你主动使用当前位置时，用于查询当地天气"
+    }
+  },
+  "requiredPrivateInfos": [
+    "getLocation"
+  ],
   "style": "v2"
 }

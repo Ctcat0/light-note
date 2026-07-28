@@ -45,6 +45,8 @@ export type {
   TransactionMonthSummary,
   TransactionStatus,
   TransactionType,
+  SupportedTransactionType,
+  TransactionListFilter,
   UpdateTransactionRequest,
   UpdateTransactionResult,
   UpdateExpenseTransactionRequest,
@@ -102,6 +104,8 @@ export interface TransactionFormState {
   note: string;
   requestId: string;
 }
+
+export type TransactionFormMode = "create" | "edit";
 
 export interface TransactionFormErrors {
   amount: string;

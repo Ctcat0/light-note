@@ -75,8 +75,10 @@ test("首次初始化创建用户、19 个分类、5 个账户并默认使用微
   assert.equal(records.accounts.every((item) => item.isSystem), true);
   assert.equal(records.accounts.every((item) => item.isEnabled), true);
   assert.ok(wechat);
-  assert.equal(result.settings.defaultAccountId, wechat._id);
-  assert.equal(records.settings.defaultAccountId, wechat._id);
+  assert.equal(result.settings.defaultExpenseAccountId, wechat._id);
+  assert.equal(result.settings.defaultIncomeAccountId, wechat._id);
+  assert.equal(records.settings.defaultExpenseAccountId, wechat._id);
+  assert.equal(records.settings.defaultIncomeAccountId, wechat._id);
   assert.equal(JSON.stringify(result).includes("openid-user-a"), false);
 });
 
@@ -102,7 +104,8 @@ test("重复初始化不创建重复数据且不覆盖用户已有设置", async
   });
   store.settings.set(records.settings._id, {
     ...records.settings,
-    defaultAccountId: alipay._id,
+    defaultExpenseAccountId: alipay._id,
+    defaultIncomeAccountId: alipay._id,
     version: records.settings.version + 1,
   });
   store.categories.set(food._id, {
@@ -129,7 +132,8 @@ test("重复初始化不创建重复数据且不覆盖用户已有设置", async
   assert.equal(store.users.size, 1);
   assert.equal(after.categories.length, 19);
   assert.equal(after.accounts.length, 5);
-  assert.equal(after.settings.defaultAccountId, alipay._id);
+  assert.equal(after.settings.defaultExpenseAccountId, alipay._id);
+  assert.equal(after.settings.defaultIncomeAccountId, alipay._id);
   assert.equal(preservedFood?.name, "工作餐");
   assert.equal(preservedFood?.isEnabled, false);
   assert.equal(store.users.get(first.user.userId)?.nickname, "自定义昵称");
@@ -155,7 +159,9 @@ test("部分账户或系统分类缺失时只补齐缺失数据", async () => {
   store.categories.delete(categoryId);
   store.settings.set(records.settings._id, {
     ...records.settings,
-    defaultAccountId: null,
+    defaultAccountId: accountId,
+    defaultExpenseAccountId: "",
+    defaultIncomeAccountId: "",
     initializationVersion: 0,
   });
 
@@ -167,7 +173,8 @@ test("部分账户或系统分类缺失时只补齐缺失数据", async () => {
   assert.equal(result.initialization.accountsCreated, 1);
   assert.equal(repaired.categories.length, 19);
   assert.equal(repaired.accounts.length, 5);
-  assert.equal(repaired.settings.defaultAccountId, accountId);
+  assert.equal(repaired.settings.defaultExpenseAccountId, accountId);
+  assert.equal(repaired.settings.defaultIncomeAccountId, accountId);
 });
 
 test("自定义分类和主动停用状态不受再次初始化影响", async () => {
@@ -207,7 +214,7 @@ test("自定义分类和主动停用状态不受再次初始化影响", async ()
   assert.equal(after.categories.length, 20);
 });
 
-test("不同微信身份得到严格隔离的用户、分类、账户和默认账户", async () => {
+test("不同微信身份得到严格隔离的用户、分类、固定渠道和默认方式", async () => {
   const store = new InMemoryUserInitializationStore();
   const [userA, userB] = await Promise.all([
     init(store, "openid-user-a"),
@@ -218,8 +225,8 @@ test("不同微信身份得到严格隔离的用户、分类、账户和默认�
 
   assert.notEqual(userA.user.userId, userB.user.userId);
   assert.notEqual(
-    recordsA.settings.defaultAccountId,
-    recordsB.settings.defaultAccountId,
+    recordsA.settings.defaultExpenseAccountId,
+    recordsB.settings.defaultExpenseAccountId,
   );
   assert.equal(
     recordsA.categories.every((item) => item.ownerId === userA.user.userId),

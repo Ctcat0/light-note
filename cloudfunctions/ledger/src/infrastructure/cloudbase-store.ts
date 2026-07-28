@@ -1,5 +1,6 @@
 import type {
   AccountRecord,
+  CategoryTransactionAggregate,
   CategoryRecord,
   LedgerStore,
   LedgerTransactionStore,
@@ -7,7 +8,10 @@ import type {
   UserRecord,
   UserSettingsRecord,
 } from "../domain/types";
-import type { TransactionType } from "../../../../shared/types/transaction";
+import type {
+  SupportedTransactionType,
+  TransactionListFilter,
+} from "../../../../shared/types/transaction";
 
 interface QueryResult {
   data: unknown[];
@@ -57,7 +61,7 @@ export interface CloudDatabase {
     gte(value: unknown): { and(condition: unknown): unknown };
     in(values: unknown[]): unknown;
     lt(value: unknown): unknown;
-    aggregate: { sum(field: string): unknown };
+    aggregate: { sum(field: string | number): unknown };
   };
   collection(name: string): CloudCollection;
   runTransaction<T>(
@@ -70,7 +74,7 @@ function createTransactionRangeFilter(
   database: CloudDatabase,
   options: {
     ownerId: string;
-    type: TransactionType;
+    type: SupportedTransactionType;
     startAt: Date;
     endAt: Date;
   },
@@ -83,6 +87,31 @@ function createTransactionRangeFilter(
       .gte(options.startAt)
       .and(database.command.lt(options.endAt)),
   };
+}
+
+function createTransactionListFilter(
+  database: CloudDatabase,
+  options: {
+    ownerId: string;
+    filter: TransactionListFilter;
+    categoryId: string | null;
+    startAt: Date;
+    endAt: Date;
+  },
+): Record<string, unknown> {
+  const filter: Record<string, unknown> = {
+    ownerId: options.ownerId,
+    type:
+      options.filter === "all"
+        ? database.command.in(["expense", "income"])
+        : options.filter,
+    isDeleted: false,
+    occurredAt: database.command
+      .gte(options.startAt)
+      .and(database.command.lt(options.endAt)),
+  };
+  if (options.categoryId !== null) filter.categoryId = options.categoryId;
+  return filter;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -225,7 +254,7 @@ export function createCloudBaseLedgerStore(
         transactionId,
       ),
     async listTransactions(options): Promise<TransactionRecord[]> {
-      const base = createTransactionRangeFilter(database, options);
+      const base = createTransactionListFilter(database, options);
       const filter =
         options.cursor === null
           ? base
@@ -263,6 +292,56 @@ export function createCloudBaseLedgerStore(
         typeof first.totalInCents === "number"
         ? first.totalInCents
         : 0;
+    },
+    async aggregateTransactions(options) {
+      const result = await database
+        .collection("transactions")
+        .aggregate()
+        .match(createTransactionRangeFilter(database, options))
+        .group({
+          _id: null,
+          amountInCents: database.command.aggregate.sum("$amountInCents"),
+          count: database.command.aggregate.sum(1),
+        })
+        .end();
+      const first = result.list[0];
+      return {
+        amountInCents:
+          isRecord(first) && typeof first.amountInCents === "number"
+            ? first.amountInCents
+            : 0,
+        count:
+          isRecord(first) && typeof first.count === "number"
+            ? first.count
+            : 0,
+      };
+    },
+    async aggregateTransactionsByCategory(options) {
+      const result = await database
+        .collection("transactions")
+        .aggregate()
+        .match(createTransactionRangeFilter(database, options))
+        .group({
+          _id: "$categoryId",
+          amountInCents: database.command.aggregate.sum("$amountInCents"),
+          count: database.command.aggregate.sum(1),
+        })
+        .end();
+      return result.list.flatMap((item): CategoryTransactionAggregate[] => {
+        if (
+          !isRecord(item) ||
+          typeof item._id !== "string" ||
+          typeof item.amountInCents !== "number" ||
+          typeof item.count !== "number"
+        ) {
+          return [];
+        }
+        return [{
+          categoryId: item._id,
+          amountInCents: item.amountInCents,
+          count: item.count,
+        }];
+      });
     },
     async getCategoriesByIds(ownerId, categoryIds): Promise<CategoryRecord[]> {
       if (categoryIds.length === 0) return [];

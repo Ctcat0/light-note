@@ -8,6 +8,9 @@
     "shared/**/*.ts",
     "cloudfunctions/user/src/**/*.ts",
     "cloudfunctions/ledger/src/**/*.ts",
+    "cloudfunctions/todo/src/**/*.ts",
+    "cloudfunctions/dataDeletion/src/**/*.ts",
+    "cloudfunctions/dataDeletionExecutor/src/**/*.ts",
     "tests/**/*.ts"
   ]
 }

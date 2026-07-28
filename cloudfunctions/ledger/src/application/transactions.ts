@@ -13,8 +13,9 @@ import type {
   TransactionMonthSummary,
   TransactionCursor,
   TransactionListItem,
+  TransactionListFilter,
   Transaction,
-  TransactionType,
+  SupportedTransactionType,
   UpdateTransactionRequest,
   UpdateTransactionResult,
 } from "../../../../shared/types/transaction";
@@ -34,13 +35,14 @@ const MAX_NOTE_LENGTH = 200;
 const MAX_FUTURE_OFFSET_MS = 5 * 60 * 1000;
 export const DEFAULT_TRANSACTION_PAGE_SIZE = 20;
 export const MAX_TRANSACTION_PAGE_SIZE = 50;
-const CURSOR_VERSION = 2;
+const CURSOR_VERSION = 4;
 
 interface CursorPayload {
   version: number;
   year: number;
   month: number;
-  type: TransactionType;
+  filter: TransactionListFilter;
+  categoryId: string | null;
   occurredAt: string;
   transactionId: string;
 }
@@ -73,6 +75,20 @@ function toTransaction(record: TransactionRecord): Transaction {
     version: record.version,
     createdAt: toDate(record.createdAt).toISOString(),
     updatedAt: toDate(record.updatedAt).toISOString(),
+  };
+}
+
+export function toAccount(record: AccountRecord, defaultChannelId: string | null): Account {
+  return {
+    accountId: record._id,
+    name: record.name,
+    type: record.type,
+    icon: record.icon,
+    sortOrder: record.sortOrder,
+    isDefault: record._id === defaultChannelId,
+    isSystem: record.isSystem,
+    isEnabled: record.isEnabled,
+    version: record.version,
   };
 }
 
@@ -207,7 +223,8 @@ export function decodeTransactionCursor(
   cursor: TransactionCursor,
   year: number,
   month: number,
-  type: TransactionType,
+  filter: TransactionListFilter,
+  categoryId: string | null,
   range: { startAt: Date; endAt: Date },
 ): { occurredAt: Date; transactionId: string } {
   if (
@@ -235,7 +252,8 @@ export function decodeTransactionCursor(
       "version",
       "year",
       "month",
-      "type",
+      "filter",
+      "categoryId",
       "occurredAt",
       "transactionId",
     ];
@@ -245,7 +263,8 @@ export function decodeTransactionCursor(
       value.version !== CURSOR_VERSION ||
       value.year !== year ||
       value.month !== month ||
-      value.type !== type ||
+      value.filter !== filter ||
+      value.categoryId !== categoryId ||
       typeof value.occurredAt !== "string" ||
       typeof value.transactionId !== "string" ||
       !/^txn_[0-9a-f]{32}$/.test(value.transactionId)
@@ -374,7 +393,7 @@ function validateCategory(
   category: CategoryRecord | null,
   categoryId: string,
   ownerId: string,
-  type: TransactionType,
+  type: SupportedTransactionType,
 ): CategoryRecord {
   if (categoryId.trim().length === 0) {
     throw new LedgerError("CATEGORY_REQUIRED", `请选择${type === "expense" ? "支出" : "收入"}分类`);
@@ -389,7 +408,10 @@ function validateCategory(
     throw new LedgerError("CATEGORY_TYPE_INVALID", "分类类型与账单类型不匹配");
   }
   if (!category.isEnabled) {
-    throw new LedgerError("CATEGORY_DISABLED", "该支出分类已停用");
+    throw new LedgerError(
+      "CATEGORY_DISABLED",
+      `该${type === "expense" ? "支出" : "收入"}分类已停用`,
+    );
   }
 
   return category;
@@ -401,16 +423,16 @@ function validateAccount(
   ownerId: string,
 ): AccountRecord {
   if (accountId.trim().length === 0) {
-    throw new LedgerError("ACCOUNT_REQUIRED", "请选择账户");
+    throw new LedgerError("ACCOUNT_REQUIRED", "请选择资金渠道");
   }
   if (account === null) {
-    throw new LedgerError("ACCOUNT_NOT_FOUND", "账户不存在");
+    throw new LedgerError("ACCOUNT_NOT_FOUND", "资金渠道不存在");
   }
   if (account.ownerId !== ownerId) {
-    throw new LedgerError("ACCOUNT_NOT_OWNED", "不能使用其他用户的账户");
+    throw new LedgerError("ACCOUNT_NOT_OWNED", "不能使用其他用户的资金渠道");
   }
   if (!account.isEnabled) {
-    throw new LedgerError("ACCOUNT_DISABLED", "该账户已停用");
+    throw new LedgerError("ACCOUNT_DISABLED", "该资金渠道已停用");
   }
 
   return account;
@@ -442,7 +464,7 @@ export async function resolveLedgerUser(
 
 export async function listCategories(
   ownerId: string,
-  type: TransactionType,
+  type: SupportedTransactionType,
   store: LedgerStore,
 ): Promise<{ items: Category[] }> {
   const records = await store.listCategories(ownerId, type);
@@ -463,23 +485,13 @@ export async function listCategories(
 
 export async function listAccounts(
   ownerId: string,
-  defaultAccountId: string | null,
+  defaultChannelId: string | null,
   store: LedgerStore,
 ): Promise<{ items: Account[] }> {
   const records = await store.listAccounts(ownerId);
 
   return {
-    items: records.map((record) => ({
-      accountId: record._id,
-      name: record.name,
-      type: record.type,
-      icon: record.icon,
-      sortOrder: record.sortOrder,
-      isDefault: record._id === defaultAccountId,
-      isSystem: record.isSystem,
-      isEnabled: record.isEnabled,
-      version: record.version,
-    })),
+    items: records.map((record) => toAccount(record, defaultChannelId)),
   };
 }
 
@@ -504,7 +516,6 @@ export async function createTransaction(options: {
     options.ownerId,
     options.requestId,
   );
-
   return options.store.runTransaction(async (transaction) => {
     const currentUser = await transaction.getUser(options.ownerId);
     if (currentUser === null) {
@@ -836,7 +847,8 @@ export async function getMonthlySummary(options: {
 
 export async function listTransactions(options: {
   ownerId: string;
-  type: TransactionType;
+  filter: TransactionListFilter;
+  categoryId: string | null;
   year: number;
   month: number;
   pageSize: number;
@@ -856,7 +868,8 @@ export async function listTransactions(options: {
           options.cursor,
           options.year,
           options.month,
-          options.type,
+          options.filter,
+          options.categoryId,
           range,
         );
 
@@ -864,7 +877,8 @@ export async function listTransactions(options: {
   try {
     records = await options.store.listTransactions({
       ownerId: options.ownerId,
-      type: options.type,
+      filter: options.filter,
+      categoryId: options.categoryId,
       startAt: range.startAt,
       endAt: range.endAt,
       pageSize: options.pageSize,
@@ -911,7 +925,8 @@ export async function listTransactions(options: {
           version: CURSOR_VERSION,
           year: options.year,
           month: options.month,
-          type: options.type,
+          filter: options.filter,
+          categoryId: options.categoryId,
           occurredAt: toDate(last.occurredAt).toISOString(),
           transactionId: last._id,
         })

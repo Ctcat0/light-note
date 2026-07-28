@@ -78,7 +78,7 @@ erDiagram
 
 ## 4. `user_settings`：用户设置
 
-用途：保存每个用户唯一的一份基础偏好，作为默认账户、位置和时区的唯一数据源。
+用途：保存每个用户唯一的一份基础偏好，作为记账默认值、位置和时区的唯一数据源。
 
 | 字段 | 类型 | 必填 | 规则 |
 | --- | --- | --- | --- |
@@ -86,12 +86,15 @@ erDiagram
 | `ownerId` | String | 是 | `users._id`，唯一 |
 | `currency` | String | 是 | MVP 固定 `CNY` |
 | `timezone` | String | 是 | IANA 时区，默认 `Asia/Shanghai` |
-| `defaultAccountId` | String \| null | 是 | 必须属于本人且已启用 |
+| `defaultTransactionType` | String | 是 | `expense \| income`，默认 `expense` |
+| `defaultExpenseAccountId` | String | 是 | 默认支付方式；必须属于本人且已启用 |
+| `defaultIncomeAccountId` | String | 是 | 默认收款方式；必须属于本人且已启用 |
 | `defaultLocation` | Object \| null | 是 | 结构见下 |
+| `preferGeolocation` | Boolean | 是 | 默认 `false`；不绕过用户主动授权 |
 | `showWeather` | Boolean | 是 | 默认 `true` |
 | `showBudget` | Boolean | 是 | 仅启用基础预算功能时可为 `true` |
 | `theme` | String | 是 | `system \| light \| dark` |
-| `initializationVersion` | Number | 是 | 当前为 `1`；区分未完成初始化与用户主动清空默认设置 |
+| `initializationVersion` | Number | 是 | 当前为 `2`；旧单默认渠道在初始化时迁移为收、付款两个默认值 |
 | `createdAt` | Date | 是 | 服务端生成 |
 | `updatedAt` | Date | 是 | 服务端生成 |
 | `version` | Number | 是 | 初始 1 |
@@ -114,9 +117,9 @@ interface DefaultLocation {
 | --- | --- | --- |
 | `uq_user_settings_owner` | `ownerId` | 唯一 |
 
-## 5. `accounts`：记账账户维度
+## 5. `accounts`：固定资金渠道维度
 
-用途：给账单提供账户分类。MVP 不维护真实余额。
+用途：给账单提供固定的支付/收款方式。内部集合名为 `accounts`，但它不表示资产，不保存资产数值，也不提供用户自定义管理。
 
 | 字段 | 类型 | 必填 | 规则 |
 | --- | --- | --- | --- |
@@ -137,10 +140,10 @@ interface DefaultLocation {
 
 | 名称 | 字段（顺序） | 属性 | 用途 |
 | --- | --- | --- | --- |
-| `idx_accounts_owner_enabled_sort` | `ownerId`, `isEnabled`, `sortOrder` | 普通 | 账户列表 |
-| `uq_accounts_owner_system_key` | `ownerId`, `systemKey` | 唯一 | 默认账户初始化与并发幂等 |
+| `idx_accounts_owner_enabled_sort` | `ownerId`, `isEnabled`, `sortOrder` | 普通 | 固定渠道选择列表 |
+| `uq_accounts_owner_system_key` | `ownerId`, `systemKey` | 唯一 | 固定渠道初始化与并发幂等 |
 
-同名账户是否允许尚未确认，因此不设置名称唯一索引。默认账户的唯一事实源是 `user_settings.defaultAccountId`；账户列表中的“默认”状态在读取时派生，不在 `accounts` 重复存储。停用当前默认账户前必须在事务或等价的可恢复流程中先指定另一个有效账户。
+固定渠道名称、启用状态和顺序不开放用户修改，因此不设置名称唯一索引。默认支付和收款方式的唯一事实源分别是 `user_settings.defaultExpenseAccountId` 与 `defaultIncomeAccountId`；列表中的“默认”状态按查询的收支类型派生，不在 `accounts` 重复存储。
 
 ## 6. `categories`：收支分类
 
@@ -150,7 +153,7 @@ interface DefaultLocation {
 | --- | --- | --- | --- |
 | `_id` | String | 是 | 分类 ID |
 | `ownerId` | String | 是 | 所属用户 |
-| `type` | String | 是 | `expense \| income` |
+| `type` | String | 是 | 只允许 `expense \| income` |
 | `systemKey` | String | 是 | 如 `expense_food`、`income_salary`；自定义项使用唯一生成键，不可修改 |
 | `name` | String | 是 | 去首尾空格后 1–20 字 |
 | `icon` | String | 是 | 受控图标标识 |
@@ -172,7 +175,7 @@ interface DefaultLocation {
 
 ## 7. `transactions`：账单
 
-用途：保存收入与支出事实。MVP 不支持 `transfer`。
+用途：保存收入与支出事实。
 
 | 字段 | 类型 | 必填 | 规则 |
 | --- | --- | --- | --- |
@@ -206,14 +209,16 @@ interface DefaultLocation {
 | --- | --- | --- | --- |
 | `uq_transactions_owner_request` | `ownerId`, `requestId` | 唯一 | 创建幂等 |
 | `idx_transactions_owner_type_active_occurred_id` | `ownerId`（升序）, `type`（升序）, `isDeleted`（升序）, `occurredAt`（降序）, `_id`（降序） | 普通 | 指定月份收支流水、稳定游标分页与月度汇总 |
+| `idx_transactions_owner_active_occurred_id` | `ownerId`（升序）, `isDeleted`（升序）, `occurredAt`（降序）, `_id`（降序） | 普通 | 默认混合收支流水的全局稳定排序与游标分页 |
 | `idx_transactions_owner_category_time` | `ownerId`, `isDeleted`, `categoryId`, `occurredAt`（降序） | 普通 | 分类筛选/统计 |
+| `idx_transactions_owner_type_category_active_occurred_id` | `ownerId`, `type`, `isDeleted`, `categoryId`, `occurredAt`（降序）, `_id`（降序） | 普通 | 统计分类下钻后的稳定分页 |
 | `idx_transactions_owner_account_time` | `ownerId`, `isDeleted`, `accountId`, `occurredAt`（降序） | 普通 | 账户筛选 |
 
-所有统计排除 `isDeleted = true`。当前流水查询必须指定 `type = expense | income`，并固定 `isDeleted = false`，按用户当前 `user_settings.timezone` 计算 `monthStart <= occurredAt < nextMonthStart`，使用 `(occurredAt DESC, _id DESC)` 稳定游标，避免 offset 深分页。列表 DTO 的 `occurredDateKey` 也按查询时的当前时区重新派生，因此修改时区后不会依赖写入时的旧日期键。
+所有统计排除 `isDeleted = true`。当前流水页面默认单次查询 `type in [expense, income]`，也允许明确筛选单一类型；始终固定 `isDeleted = false`，按用户当前 `user_settings.timezone` 计算 `monthStart <= occurredAt < nextMonthStart`，使用 `(occurredAt DESC, _id DESC)` 全局稳定游标，避免双查询合并和 offset 深分页。列表 DTO 的 `occurredDateKey` 也按查询时的当前时区重新派生，因此修改时区后不会依赖写入时的旧日期键。
 
-收入和支出编辑、删除均按 `_id` 在 CloudBase 事务内读取单文档，再校验可信 `ownerId`、记录原类型、`isDeleted` 和 `version`。编辑仅更新金额、分类、账户、发生时间、日期键、备注、`updatedAt` 与版本，分类必须与记录原类型匹配；删除设置 `isDeleted=true`、`deletedAt`、`updatedAt` 与新版本，数据库文档不会物理移除。API 的 `status=active/deleted` 由 `isDeleted` 派生，避免保存两套可能冲突的状态事实。该单文档事务不需要新增复合索引。
+收入和支出编辑、删除均按 `_id` 在 CloudBase 事务内读取，再校验可信 `ownerId`、记录原类型、`isDeleted` 和 `version`。创建和编辑时校验 `accountId` 指向本人的启用资金渠道；交易不会修改渠道文档。API 的 `status=active/deleted` 由 `isDeleted` 派生，避免保存两套可能冲突的状态事实。
 
-`uq_transactions_owner_request` 与 `idx_transactions_owner_type_active_occurred_id` 都是当前收支创建和流水闭环的部署必需索引，需在每个 CloudBase 环境的控制台手工创建；代码不会自动创建索引。分类和账户展示采用按本页引用 ID 批量关联当前记录的方案，不保存名称快照：分类或账户改名会同步反映到历史流水；关联记录意外缺失时只显示“未知分类/未知账户”，不会暴露其他用户记录。交易 `_id` 同时由 `ownerId + requestId` 确定性生成，并在服务端事务中先读后写；唯一索引仍是上线必需的数据完整性防线。
+`uq_transactions_owner_request`、`idx_transactions_owner_type_active_occurred_id` 与 `idx_transactions_owner_active_occurred_id` 都是当前收支闭环的部署必需索引，需在每个 CloudBase 环境的控制台手工创建；代码不会自动创建索引。带 `type` 的旧索引继续服务单类型筛选和按类型月度聚合，新索引服务混合结果的全局时间排序，两者用途不同，不是重复索引。分类和账户展示采用按本页引用 ID 批量关联当前记录的方案，不保存名称快照：分类或账户改名会同步反映到历史流水；关联记录意外缺失时只显示“未知分类/未知账户”，不会暴露其他用户记录。交易 `_id` 同时由 `ownerId + requestId` 确定性生成，并在服务端事务中先读后写；唯一索引仍是上线必需的数据完整性防线。
 
 ## 8. `budgets`：基础月预算
 
@@ -258,7 +263,7 @@ interface DefaultLocation {
 
 | 名称 | 字段（顺序） | 属性 |
 | --- | --- | --- |
-| `idx_todo_lists_owner_enabled_sort` | `ownerId`, `isEnabled`, `sortOrder` | 普通 |
+| `idx_todo_lists_owner_enabled_sort` | `ownerId` 升序, `isEnabled` 升序, `sortOrder` 升序, `_id` 升序 | 普通 |
 
 ## 10. `todos`：待办
 
@@ -267,7 +272,7 @@ interface DefaultLocation {
 | `_id` | String | 是 | 待办 ID |
 | `ownerId` | String | 是 | 所属用户 |
 | `title` | String | 是 | 去首尾空格后 1–100 字 |
-| `description` | String \| null | 是 | 空值统一为 `null`，最大长度待确认 |
+| `description` | String \| null | 是 | 空值统一为 `null`，去首尾空格后最多 500 字 |
 | `status` | String | 是 | `pending \| doing \| completed \| cancelled` |
 | `priority` | String | 是 | `high \| medium \| low \| none` |
 | `listId` | String | 是 | 本人的有效待办清单 |
@@ -276,11 +281,14 @@ interface DefaultLocation {
 | `dueAt` | Date \| null | 是 | 仅 `datetime` 使用 |
 | `completedAt` | Date \| null | 是 | 进入 `completed` 时写入，撤销时清空 |
 | `requestId` | String | 是 | 创建幂等键 |
+| `createFingerprint` | String | 是 | 服务端对规范化创建参数计算的 SHA-256；不返回前端 |
 | `isDeleted` | Boolean | 是 | 默认 `false` |
 | `deletedAt` | Date \| null | 是 | 删除时写入 |
 | `createdAt` | Date | 是 | 服务端生成 |
 | `updatedAt` | Date | 是 | 服务端生成 |
 | `version` | Number | 是 | 初始 1 |
+| `lastMutationRequestId` | String | 否 | 最近一次编辑、状态或删除请求的幂等键；不返回前端 |
+| `lastMutationFingerprint` | String | 否 | 最近一次修改参数摘要；不返回前端 |
 
 字段组合约束：
 
@@ -295,10 +303,12 @@ interface DefaultLocation {
 | 名称 | 字段（顺序） | 属性 | 用途 |
 | --- | --- | --- | --- |
 | `uq_todos_owner_request` | `ownerId`, `requestId` | 唯一 | 创建幂等 |
-| `idx_todos_owner_status_date` | `ownerId`, `isDeleted`, `status`, `dueDateKey` | 普通 | 今日、近期、已完成筛选 |
-| `idx_todos_owner_list_status_date` | `ownerId`, `isDeleted`, `listId`, `status`, `dueDateKey` | 普通 | 清单筛选 |
-| `idx_todos_owner_due_at` | `ownerId`, `isDeleted`, `dueAt` | 普通 | 精确时间排序和逾期判断 |
-| `idx_todos_owner_created` | `ownerId`, `isDeleted`, `createdAt`（降序） | 普通 | 无截止时间与全部列表 |
+| `idx_todos_owner_active_created_id` | `ownerId` 升序, `isDeleted` 升序, `createdAt` 降序, `_id` 降序 | 普通 | 全部列表和复合游标 |
+| `idx_todos_owner_active_date_created_id` | `ownerId` 升序, `isDeleted` 升序, `dueDateKey` 升序, `createdAt` 降序, `_id` 降序 | 普通 | 今日视图 |
+| `idx_todos_owner_active_status_date_created_id_v2` | `ownerId` 升序, `isDeleted` 升序, `status` 升序, `dueDateKey` 升序, `createdAt` 降序, `_id` 降序 | 普通 | 近期视图；开发环境以该精确方向索引为准 |
+| `idx_todos_owner_active_status_created_id` | `ownerId` 升序, `isDeleted` 升序, `status` 升序, `createdAt` 降序, `_id` 降序 | 普通 | 已完成视图 |
+| `idx_todos_owner_active_status_kind_date_created_id` | `ownerId` 升序, `isDeleted` 升序, `status` 升序, `dueKind` 升序, `dueDateKey` 升序, `createdAt` 降序, `_id` 降序 | 普通 | 日期型逾期分支 |
+| `idx_todos_owner_active_status_kind_at_created_id` | `ownerId` 升序, `isDeleted` 升序, `status` 升序, `dueKind` 升序, `dueAt` 升序, `createdAt` 降序, `_id` 降序 | 普通 | 时间型逾期分支 |
 
 MVP 不包含 `reminderAt`、`repeatRule`、`tags`、`isOutdoor`；这些字段在对应功能进入开发前另行设计，避免空字段被误认为已支持。
 
@@ -332,36 +342,75 @@ MVP 不包含 `reminderAt`、`repeatRule`、`tags`、`isOutdoor`；这些字段�
 
 不要直接缓存供应商原始响应，以免字段漂移、敏感字段或无用数据进入数据库。
 
-## 12. 数据初始化与删除
+当前 Open-Meteo adapter 使用 `locationKey = open-meteo:<latitude>,<longitude>`，坐标最多四位小数。`current` 的 `normalizedData` 保存标准化 `location` 与 `current`，`daily` 保存最多三天的标准化 `daily`；两类记录分别计算过期时间和陈旧窗口。当前天气没有对应降水概率时该字段为 `null`，逐日预报保存供应商返回的最大降水概率。历史 `qweather:` 默认城市不再兼容，升级后需清空并由用户重新选择；旧缓存可等待自然过期，无需破坏性删除。
 
-### 12.1 用户初始化
+## 12. `data_deletion_requests`：个人数据删除申请
+
+用途：保存当前用户唯一的删除申请、7 天冷静期、后台批次进度和最小化审计状态。该集合仅云函数可访问，使用按 `ownerId` 派生的确定性 `_id`，因此同一用户最多存在一条当前申请记录。
+
+| 字段 | 类型 | 必填 | 规则 |
+| --- | --- | --- | --- |
+| `_id` | String | 是 | 按可信 `ownerId` 派生 |
+| `ownerId` | String | 是 | `users._id` |
+| `requestId` | String | 是 | 前端生成 UUID；同一次申请重试复用 |
+| `status` | String | 是 | `pending \| cancelled \| processing \| completed \| failed` |
+| `requestedAt` | Date | 是 | 服务端时间 |
+| `cooldownEndsAt` | Date | 是 | `requestedAt + 7 天` |
+| `cancelledAt` / `processingStartedAt` / `completedAt` / `failedAt` | Date \| null | 是 | 服务端状态时间 |
+| `nextRetryAt` / `leaseExpiresAt` | Date \| null | 是 | 失败恢复与执行租约 |
+| `attempts` | Number | 是 | 后台认领次数 |
+| `progress` | Object | 是 | 当前集合序号和各集合已删除数量 |
+| `lastErrorCode` | String \| null | 是 | 受控错误码，不保存堆栈 |
+| `createdAt` / `updatedAt` | Date | 是 | 服务端时间 |
+| `version` | Number | 是 | 乐观并发版本 |
+
+索引：`idx_data_deletion_runnable(status, cooldownEndsAt)`、`idx_data_deletion_retry(status, nextRetryAt)` 和 `idx_data_deletion_lease(status, leaseExpiresAt)`。`ownerId` 由确定性文档 ID 保证唯一，仍可增加唯一索引 `uq_data_deletion_owner` 作为完整性防线。
+
+## 13. 数据初始化与删除
+
+### 13.1 用户初始化
 
 `user.init` 必须可幂等执行：
 
 1. 按可信 `openId` 获取或创建 `users`；
 2. 按稳定 `systemKey` 补齐 11 个支出分类和 8 个收入分类；
-3. 按稳定 `systemKey` 补齐 5 个默认账户；
-4. 创建唯一 `user_settings`，首次初始化将微信账户 ID 写入 `defaultAccountId`；
+3. 按稳定 `systemKey` 补齐 5 个默认固定渠道；
+4. 创建唯一 `user_settings`，首次初始化将微信渠道同时写入默认支付方式和默认收款方式；
 5. 更新 `lastLoginAt`，返回安全用户摘要、设置和本次实际创建数量。
 
-初始化文档 ID 由可信身份和稳定键确定，全部写入在服务端事务内完成；唯一索引作为第二道并发保护。重复调用只补齐缺失项，不覆盖名称、启用状态或用户已经选择的默认账户。默认待办清单由后续待办域任务实现，本次初始化不创建待办数据。
+初始化文档 ID 由可信身份和稳定键确定，全部写入在服务端事务内完成；唯一索引作为第二道并发保护。重复调用只补齐缺失项，不覆盖名称、启用状态或用户已经选择的默认支付/收款方式。默认待办清单由后续待办域任务实现，本次初始化不创建待办数据。
 
-### 12.2 用户删除
+### 13.2 用户删除
 
-具体冷静期和保留策略待产品/合规确认。无论采取立即删除还是延迟删除，删除作业都必须：
+个人数据删除申请统一采用 7 天冷静期：
 
-- 先将 `users.status` 置为 `deletion_pending` 并阻止普通业务写入；
-- 按 `ownerId` 删除或匿名化 `user_settings`、账户、分类、账单、预算、待办清单和待办；
+- `dataDeletion.request` 使用顶层 `requestId` 幂等创建申请，并将 `users.status` 置为 `deletion_pending`；
+- `pending` 可由 `dataDeletion.cancel` 撤销并恢复 `users.status = active`；
+- 普通前端只能查询、申请和撤销，不能调用正式删除执行器；
+- 独立执行器必须验证服务端环境令牌，只认领冷静期已结束、租约过期或到达重试时间的申请；
+- 按 `ownerId` 分批删除实际存在的 `transactions`、`todos`、`todo_lists`、`categories`、`accounts` 和 `user_settings`，最后按 `_id` 删除 `users`；
+- 每批保存集合序号和删除计数；重复执行、文档已不存在和失败重试均安全；
 - 清理属于用户的云存储对象（若未来启用附件）；
 - 不删除共享 `weather_cache`，因为其中不得包含用户身份或轨迹；
-- 保存最小化、脱敏且符合法定期限的删除审计结果。
+- 保留最小化的 `data_deletion_requests` 状态作为删除审计，不保存 `openId` 或业务正文。
 
-## 13. 数据模型待定项
+## 14. 统计派生模型
+
+统计分析不新增集合，也不把月度汇总、趋势或分类占比作为事实字段落库。所有结果都从当前用户 `isDeleted = false` 的收入/支出交易按 `user_settings.timezone` 计算：
+
+- 月度概览分别聚合收入、支出金额与笔数，结余为整数分相减；
+- 6/12 个月趋势逐月在云端聚合并补齐零值月份；
+- 分类排行按 `categoryId` 聚合金额和笔数，再批量关联当前用户的分类文档；
+- 分类文档缺失时使用“已删除分类”和 `other` 图标，不丢弃历史金额；
+- 占比使用整数万分比 `ratioBasisPoints`，金额始终保持整数分。
+
+当前不引入统计缓存集合。若真实数据量和 CloudBase 指标证明逐月聚合成为瓶颈，再单独设计可重建、带版本的汇总缓存。
+
+## 15. 数据模型待定项
 
 1. 预算金额、待办描述和未来商户字段的确切长度上限；支出单笔上限与备注长度本次已确定；
-2. 同类型分类名和账户名是否区分大小写、是否允许重复；
+2. 同类型分类名是否区分大小写、是否允许重复；
 3. 基础预算是否进入首发 MVP；
-4. 个人数据删除冷静期、软删除保留期和物理清理周期；
-5. 默认分类和默认账户的最终产品文案与图标集合；
-6. 天气供应商确定后，`locationKey` 格式和 `normalizedData` 的最终字段映射；
-7. CloudBase 控制台对目标组合索引方向与数量限制的最终部署验证。
+4. 删除申请审计记录和云函数日志的生产保留期限；
+5. 默认分类和固定支付/收款渠道的最终产品文案与图标集合；
+6. CloudBase 控制台对其余目标组合索引方向与数量限制的最终部署验证。

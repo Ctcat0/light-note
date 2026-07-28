@@ -1,0 +1,25 @@
+<view class="page-shell todo-edit-page">
+  <view class="page-header"><text class="page-title">{{isEditing ? '编辑待办' : '新建待办'}}</text><text class="page-description">{{isEditing ? '调整任务内容、优先级和截止时间。' : '写下任务内容，需要时再设置优先级和截止时间。'}}</text></view>
+  <view class="page-state-card" wx:if="{{viewState === 'loading'}}"><app-loading message="正在加载待办表单" /></view>
+  <view class="page-state-card" wx:elif="{{viewState === 'error'}}"><app-error-state title="表单加载失败" message="{{errorMessage}}" bind:retry="handleRetry" /></view>
+  <view class="form-card" wx:else>
+    <view class="field-block">
+      <view class="field-heading"><text class="field-label">标题</text><text class="field-count">{{form.title.length}}/100</text></view>
+      <input class="text-input" value="{{form.title}}" maxlength="100" placeholder="要完成什么？" disabled="{{submitting}}" bindinput="handleTitleInput" />
+      <text class="field-error" wx:if="{{titleError}}">{{titleError}}</text>
+    </view>
+    <view class="field-block">
+      <view class="field-heading"><text class="field-label">描述（可选）</text><text class="field-count">{{descriptionLength}}/500</text></view>
+      <textarea class="description-input" value="{{form.description}}" maxlength="500" placeholder="补充任务细节" disabled="{{submitting}}" bindinput="handleDescriptionInput" />
+    </view>
+    <view class="field-row"><text class="field-label">优先级</text><picker mode="selector" range="{{priorityOptions}}" range-key="label" value="{{priorityIndex}}" disabled="{{submitting}}" bindchange="handlePriorityChange"><view class="picker-value">{{priorityOptions[priorityIndex].label}}⌄</view></picker></view>
+    <view class="field-row"><text class="field-label">清单</text><picker mode="selector" range="{{todoLists}}" range-key="name" value="{{listIndex}}" disabled="{{submitting}}" bindchange="handleListChange"><view class="picker-value">{{todoLists[listIndex].name}}⌄</view></picker></view>
+    <view class="field-row"><text class="field-label">截止方式</text><picker mode="selector" range="{{dueKindOptions}}" range-key="label" value="{{dueKindIndex}}" disabled="{{submitting}}" bindchange="handleDueKindChange"><view class="picker-value">{{dueKindOptions[dueKindIndex].label}}⌄</view></picker></view>
+    <view class="field-row" wx:if="{{form.dueKind !== 'none'}}"><text class="field-label">截止日期</text><picker mode="date" value="{{form.dateValue}}" disabled="{{submitting}}" bindchange="handleDateChange"><view class="picker-value compact">{{form.dateValue}}</view></picker></view>
+    <view class="field-row" wx:if="{{form.dueKind === 'datetime'}}"><text class="field-label">截止时间</text><picker mode="time" value="{{form.timeValue}}" disabled="{{submitting}}" bindchange="handleTimeChange"><view class="picker-value compact">{{form.timeValue}}</view></picker></view>
+    <view class="submit-error" wx:if="{{submitErrorMessage}}"><text>{{submitErrorMessage}}</text><button disabled="{{submitting}}" bindtap="handleRetrySubmission">重试保存</button></view>
+  </view>
+  <view class="todo-form-action-dock" wx:if="{{viewState === 'ready'}}">
+    <button class="save-button" type="primary" loading="{{submitting}}" disabled="{{submitting || !form.title || !form.listId}}" bindtap="handleSubmit">{{submitting ? '正在保存' : (isEditing ? '保存修改' : '创建待办')}}</button>
+  </view>
+</view>

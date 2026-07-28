@@ -120,7 +120,11 @@ async function updateDocument<TRecord extends { _id: string }>(
   collectionName: string,
   record: TRecord,
 ): Promise<void> {
-  await transaction.collection(collectionName).doc(record._id).update({
+  // CloudBase flattens nested objects passed to update(). Replacing a previous
+  // null value (for example defaultLocation) would therefore fail with
+  // PathNotVisible. The domain always supplies the complete record, so set()
+  // is the correct atomic replacement operation here.
+  await transaction.collection(collectionName).doc(record._id).set({
     data: withoutId(record),
   });
 }

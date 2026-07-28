@@ -151,8 +151,72 @@ test("ledger service 发送月份游标查询且严格解析列表和全月汇�
   assert.equal(result.summary.monthExpenseInCents, 4430);
   const serialized = JSON.stringify(calls[0]);
   assert.match(serialized, /listTransactions/);
-  assert.match(serialized, /"type":"expense"/);
+  assert.match(serialized, /"filter":"expense"/);
   assert.doesNotMatch(serialized, /ownerId|openId|userId/);
+});
+
+test("ledger service 默认混合筛选可同时解析收入和支出", async () => {
+  const calls: object[] = [];
+  const service = createLedgerService(async (options) => {
+    calls.push(options);
+    return {
+      data: options.parseData({
+        items: [
+          {
+            transactionId: "txn_income",
+            type: "income",
+            amountInCents: 500000,
+            categoryId: "income-category",
+            categoryName: "工资",
+            categoryIcon: "salary",
+            accountId: "account-a",
+            accountName: "银行卡",
+            accountIcon: "bank",
+            occurredAt: "2026-07-21T10:00:00.000Z",
+            occurredDateKey: "2026-07-21",
+            note: "7月工资",
+            status: "active",
+            createdAt: "2026-07-21T10:00:00.000Z",
+          },
+          {
+            transactionId: "txn_expense",
+            type: "expense",
+            amountInCents: 1250,
+            categoryId: "expense-category",
+            categoryName: "餐饮",
+            categoryIcon: "food",
+            accountId: "account-a",
+            accountName: "银行卡",
+            accountIcon: "bank",
+            occurredAt: "2026-07-21T09:00:00.000Z",
+            occurredDateKey: "2026-07-21",
+            note: null,
+            status: "active",
+            createdAt: "2026-07-21T09:00:00.000Z",
+          },
+        ],
+        pagination: { pageSize: 20, nextCursor: null, hasMore: false },
+        summary: {
+          year: 2026,
+          month: 7,
+          monthExpenseInCents: 1250,
+          monthIncomeInCents: 500000,
+          monthBalanceInCents: 498750,
+        },
+      }),
+      requestId: options.requestId,
+      serverTime: transactionResponse.updatedAt,
+    };
+  });
+  const result = await service.listTransactions({
+    filter: "all",
+    year: 2026,
+    month: 7,
+    pageSize: 20,
+    cursor: null,
+  });
+  assert.deepEqual(result.items.map((value) => value.type), ["income", "expense"]);
+  assert.match(JSON.stringify(calls[0]), /"filter":"all"/);
 });
 
 test("ledger service 调用独立月度汇总且校验整数结余关系", async () => {

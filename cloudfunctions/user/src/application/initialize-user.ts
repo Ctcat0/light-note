@@ -20,7 +20,7 @@ import type {
 } from "../domain/types";
 import { UserInitializationError } from "../domain/types";
 
-const INITIALIZATION_VERSION = 1;
+const INITIALIZATION_VERSION = 2;
 const DEFAULT_TIMEZONE = "Asia/Shanghai";
 
 export interface InitializeUserOptions {
@@ -193,7 +193,7 @@ async function ensureAccounts(
       ) {
         throw new UserInitializationError(
           "DEPENDENCY_ERROR",
-          "默认账户数据不一致",
+          "固定渠道数据不一致",
         );
       }
 
@@ -219,24 +219,24 @@ function chooseInitialDefaultAccount(accounts: AccountRecord[]): AccountRecord {
   if (selected === undefined) {
     throw new UserInitializationError(
       "DEPENDENCY_ERROR",
-      "没有可用的默认账户",
+      "没有可用的固定支付/收款渠道",
     );
   }
 
   return selected;
 }
 
-async function validateExistingDefaultAccount(
+async function validateExistingDefaultChannel(
   transaction: UserInitializationTransaction,
   ownerId: string,
-  defaultAccountId: string,
+  accountId: string,
 ): Promise<void> {
-  const account = await transaction.getAccount(defaultAccountId);
+  const account = await transaction.getAccount(accountId);
 
-  if (account === null || account.ownerId !== ownerId) {
+  if (account === null || account.ownerId !== ownerId || !account.isEnabled) {
     throw new UserInitializationError(
       "DEPENDENCY_ERROR",
-      "默认账户归属校验失败",
+      "默认资金渠道校验失败",
     );
   }
 }
@@ -251,8 +251,11 @@ function createSettingsRecord(
     ownerId,
     currency: "CNY",
     timezone: DEFAULT_TIMEZONE,
-    defaultAccountId,
+    defaultTransactionType: "expense",
+    defaultExpenseAccountId: defaultAccountId,
+    defaultIncomeAccountId: defaultAccountId,
     defaultLocation: null,
+    preferGeolocation: false,
     showWeather: true,
     showBudget: false,
     theme: "system",
@@ -287,27 +290,51 @@ async function ensureSettings(
     );
   }
 
-  if (existing.defaultAccountId !== null) {
-    await validateExistingDefaultAccount(
+  if (
+    existing.initializationVersion >= INITIALIZATION_VERSION &&
+    existing.defaultExpenseAccountId &&
+    existing.defaultIncomeAccountId
+  ) {
+    await validateExistingDefaultChannel(
       transaction,
       ownerId,
-      existing.defaultAccountId,
+      existing.defaultExpenseAccountId,
     );
-  }
-
-  if (existing.initializationVersion >= INITIALIZATION_VERSION) {
+    await validateExistingDefaultChannel(
+      transaction,
+      ownerId,
+      existing.defaultIncomeAccountId,
+    );
     return existing;
   }
 
-  const defaultAccountId =
+  const fallbackAccountId =
     existing.defaultAccountId ?? chooseInitialDefaultAccount(accounts)._id;
+  const defaultExpenseAccountId =
+    existing.defaultExpenseAccountId || fallbackAccountId;
+  const defaultIncomeAccountId =
+    existing.defaultIncomeAccountId || fallbackAccountId;
+  await validateExistingDefaultChannel(
+    transaction,
+    ownerId,
+    defaultExpenseAccountId,
+  );
+  await validateExistingDefaultChannel(
+    transaction,
+    ownerId,
+    defaultIncomeAccountId,
+  );
   const settings: UserSettingsRecord = {
     ...existing,
-    defaultAccountId,
+    defaultTransactionType: existing.defaultTransactionType ?? "expense",
+    defaultExpenseAccountId,
+    defaultIncomeAccountId,
+    preferGeolocation: existing.preferGeolocation ?? false,
     initializationVersion: INITIALIZATION_VERSION,
     updatedAt: now,
     version: existing.version + 1,
   };
+  delete settings.defaultAccountId;
   await transaction.updateSettings(settings);
 
   return settings;
@@ -346,8 +373,11 @@ function toResult(
     settings: {
       currency: settings.currency,
       timezone: settings.timezone,
-      defaultAccountId: settings.defaultAccountId,
+      defaultTransactionType: settings.defaultTransactionType,
+      defaultExpenseAccountId: settings.defaultExpenseAccountId,
+      defaultIncomeAccountId: settings.defaultIncomeAccountId,
       defaultLocation: settings.defaultLocation,
+      preferGeolocation: settings.preferGeolocation,
       showWeather: settings.showWeather,
       showBudget: settings.showBudget,
       theme: settings.theme,

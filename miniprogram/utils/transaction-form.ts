@@ -4,9 +4,9 @@ import {
 } from "../constants/transaction";
 import type {
   CreateTransactionRequest,
+  SupportedTransactionType,
   TransactionFormErrors,
   TransactionFormState,
-  TransactionType,
 } from "../types/transaction";
 import { createIsoFromZonedDateTime } from "./date";
 import { parseYuanInputToCents } from "./money";
@@ -28,7 +28,7 @@ function emptyErrors(): TransactionFormErrors {
 
 export function validateTransactionForm(
   form: TransactionFormState,
-  type: TransactionType,
+  type: SupportedTransactionType,
   options: { now?: Date; timeZone?: string } = {},
 ): TransactionFormValidationResult {
   const errors = emptyErrors();
@@ -46,7 +46,7 @@ export function validateTransactionForm(
   }
 
   if (form.accountId.length === 0) {
-    errors.account = "请选择账户";
+    errors.account = `请选择${type === "income" ? "收款方式" : "支付方式"}`;
   }
 
   try {

@@ -1,1 +1,15 @@
-/* 页面公共样式由 app.wxss 提供。 */
+.profile-page { padding-bottom: 80rpx; }
+.settings-card, .danger-card { margin-top: 24rpx; padding: 12rpx 28rpx 4rpx; border: 1rpx solid #e7e9ec; border-radius: 24rpx; background: #fff; }
+.section-title { display: block; padding: 22rpx 0 12rpx; color: #5e666d; font-size: 24rpx; font-weight: 650; }
+.setting-row { display: flex; min-height: 92rpx; align-items: center; justify-content: space-between; gap: 24rpx; border-top: 1rpx solid #eef0f2; color: #252a2f; font-size: 28rpx; }
+.setting-value { max-width: 58%; color: #747b82; text-align: right; }
+.setting-note { display: block; margin-top: 8rpx; color: #8a9097; font-size: 21rpx; }
+.action-row:active { opacity: .65; }
+.setting-button { width: 100%; margin: 0; border-top: 1rpx solid #eef0f2; border-radius: 0; background: transparent; color: #2f6f5e; font-size: 27rpx; line-height: 92rpx; text-align: left; }
+.danger-card { padding-bottom: 28rpx; border-color: #f0dada; }
+.danger-title { color: #a63b3b; }
+.deletion-description { display: block; padding: 8rpx 0 24rpx; color: #727981; font-size: 24rpx; line-height: 1.65; }
+.danger-button, .secondary-danger-button { width: 100%; border-radius: 16rpx; font-size: 27rpx; line-height: 78rpx; }
+.danger-button { background: #b83b3b; color: #fff; }
+.danger-button[disabled] { background: #d8baba; color: #fff; }
+.secondary-danger-button { border: 1rpx solid #dca9a9; background: #fff; color: #a63b3b; }

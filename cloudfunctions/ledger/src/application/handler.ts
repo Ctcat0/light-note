@@ -4,6 +4,12 @@ import type {
   CloudFunctionRequest,
 } from "../../../../shared/types/api";
 import type {
+  CategoryStatisticsResult,
+  StatisticsMonthCount,
+  StatisticsMonthSummary,
+  StatisticsTrendResult,
+} from "../../../../shared/types/statistics";
+import type {
   CreateTransactionRequest,
   CreateTransactionResult,
   DeleteTransactionRequest,
@@ -34,6 +40,11 @@ import {
   resolveLedgerUser,
   updateTransaction,
 } from "./transactions";
+import {
+  getCategoryStatistics,
+  getStatisticsSummary,
+  getStatisticsTrend,
+} from "./statistics";
 
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -46,7 +57,10 @@ type LedgerResponseData =
   | GetMonthlySummaryResult
   | ListCategoriesResult
   | ListAccountsResult
-  | ListTransactionsResult;
+  | ListTransactionsResult
+  | StatisticsMonthSummary
+  | StatisticsTrendResult
+  | CategoryStatisticsResult;
 
 interface LedgerFunctionDependencies {
   getOpenId(): string | undefined;
@@ -121,7 +135,7 @@ function parseCreatePayload(value: object): CreateTransactionRequest {
     throw new LedgerError("INVALID_ARGUMENT", "账单参数包含未允许的字段");
   }
   if (value.type !== "expense" && value.type !== "income") {
-    throw new LedgerError("INVALID_ARGUMENT", "账单类型无效");
+    throw new LedgerError("INVALID_TRANSACTION_TYPE", "仅支持收入和支出账单");
   }
   if (typeof value.categoryId !== "string") {
     throw new LedgerError("CATEGORY_REQUIRED", "请选择分类");
@@ -243,13 +257,22 @@ function parseCategoryListPayload(value: object): ListCategoriesRequest {
 function parseAccountListPayload(value: object): ListAccountsRequest {
   if (
     !isRecord(value) ||
-    !hasExactKeys(value, ["includeDisabled"], ["includeDisabled"]) ||
+    !hasExactKeys(
+      value,
+      ["transactionType", "includeDisabled"],
+      ["transactionType", "includeDisabled"],
+    ) ||
+    (value.transactionType !== "expense" &&
+      value.transactionType !== "income") ||
     value.includeDisabled !== false
   ) {
-    throw new LedgerError("INVALID_ARGUMENT", "账户查询参数无效");
+    throw new LedgerError("INVALID_ARGUMENT", "资金渠道查询参数无效");
   }
 
-  return { includeDisabled: false };
+  return {
+    transactionType: value.transactionType,
+    includeDisabled: false,
+  };
 }
 
 function parseTransactionListPayload(
@@ -259,14 +282,28 @@ function parseTransactionListPayload(
     !isRecord(value) ||
     !hasExactKeys(
       value,
-      ["type", "year", "month", "pageSize", "cursor"],
-      ["type", "year", "month", "pageSize", "cursor"],
+      ["filter", "categoryId", "year", "month", "pageSize", "cursor"],
+      ["filter", "year", "month", "pageSize", "cursor"],
     )
   ) {
     throw new LedgerError("INVALID_ARGUMENT", "流水查询参数无效");
   }
-  if (value.type !== "expense" && value.type !== "income") {
-    throw new LedgerError("INVALID_ARGUMENT", "账单类型无效");
+  if (
+    value.filter !== "all" &&
+    value.filter !== "expense" &&
+    value.filter !== "income"
+  ) {
+    throw new LedgerError("INVALID_TRANSACTION_TYPE", "流水筛选类型无效");
+  }
+  if (
+    value.categoryId !== undefined &&
+    value.categoryId !== null &&
+    (typeof value.categoryId !== "string" || value.categoryId.trim().length === 0)
+  ) {
+    throw new LedgerError("INVALID_ARGUMENT", "分类筛选参数无效");
+  }
+  if (typeof value.categoryId === "string" && value.filter === "all") {
+    throw new LedgerError("INVALID_ARGUMENT", "分类筛选必须指定收入或支出类型");
   }
   if (
     !Number.isInteger(value.year) ||
@@ -296,7 +333,8 @@ function parseTransactionListPayload(
     throw new LedgerError("INVALID_CURSOR", "分页游标无效");
   }
   return {
-    type: value.type,
+    filter: value.filter,
+    categoryId: typeof value.categoryId === "string" ? value.categoryId : null,
     year: value.year,
     month: value.month,
     pageSize: value.pageSize,
@@ -328,6 +366,53 @@ function parseMonthlySummaryPayload(value: object): GetMonthlySummaryRequest {
     throw new LedgerError("INVALID_MONTH", "month 必须是 1 至 12 的整数");
   }
   return { year: value.year, month: value.month };
+}
+
+function parseStatisticsTrendPayload(value: object): {
+  endYear: number;
+  endMonth: number;
+  monthCount: StatisticsMonthCount;
+} {
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(
+      value,
+      ["endYear", "endMonth", "monthCount"],
+      ["endYear", "endMonth", "monthCount"],
+    )
+  ) {
+    throw new LedgerError("INVALID_ARGUMENT", "趋势统计参数无效");
+  }
+  const period = parseMonthlySummaryPayload({
+    year: value.endYear,
+    month: value.endMonth,
+  });
+  if (value.monthCount !== 6 && value.monthCount !== 12) {
+    throw new LedgerError("INVALID_MONTH_COUNT", "monthCount 仅支持 6 或 12");
+  }
+  return {
+    endYear: period.year,
+    endMonth: period.month,
+    monthCount: value.monthCount,
+  };
+}
+
+function parseCategoryStatisticsPayload(value: object): {
+  year: number;
+  month: number;
+  type: "expense" | "income";
+} {
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, ["year", "month", "type"], ["year", "month", "type"])
+  ) {
+    throw new LedgerError("INVALID_ARGUMENT", "分类统计参数无效");
+  }
+  if (value.type !== "expense" && value.type !== "income") {
+    throw new LedgerError("INVALID_TRANSACTION_TYPE", "分类统计类型无效");
+  }
+  const period = parseMonthlySummaryPayload({ year: value.year, month: value.month });
+  return { ...period, type: value.type };
 }
 
 function successResponse(
@@ -407,6 +492,36 @@ export function createLedgerFunctionHandler(
           });
           break;
         }
+        case "getStatisticsSummary": {
+          const payload = parseMonthlySummaryPayload(request.payload);
+          data = await getStatisticsSummary({
+            ownerId: identity.user._id,
+            ...payload,
+            settings: identity.settings,
+            store: dependencies.store,
+          });
+          break;
+        }
+        case "getStatisticsTrend": {
+          const payload = parseStatisticsTrendPayload(request.payload);
+          data = await getStatisticsTrend({
+            ownerId: identity.user._id,
+            ...payload,
+            settings: identity.settings,
+            store: dependencies.store,
+          });
+          break;
+        }
+        case "getCategoryStatistics": {
+          const payload = parseCategoryStatisticsPayload(request.payload);
+          data = await getCategoryStatistics({
+            ownerId: identity.user._id,
+            ...payload,
+            settings: identity.settings,
+            store: dependencies.store,
+          });
+          break;
+        }
         case "updateTransaction":
           data = await updateTransaction({
             ownerId: identity.user._id,
@@ -434,19 +549,23 @@ export function createLedgerFunctionHandler(
             dependencies.store,
           );
           break;
-        case "listAccounts":
-          parseAccountListPayload(request.payload);
+        case "listAccounts": {
+          const payload = parseAccountListPayload(request.payload);
           data = await listAccounts(
             identity.user._id,
-            identity.settings.defaultAccountId,
+            payload.transactionType === "expense"
+              ? identity.settings.defaultExpenseAccountId
+              : identity.settings.defaultIncomeAccountId,
             dependencies.store,
           );
           break;
+        }
         case "listTransactions": {
           const payload = parseTransactionListPayload(request.payload);
           data = await listTransactions({
             ownerId: identity.user._id,
-            type: payload.type,
+            filter: payload.filter,
+            categoryId: payload.categoryId ?? null,
             year: payload.year,
             month: payload.month,
             pageSize: payload.pageSize,
@@ -471,32 +590,35 @@ export function createLedgerFunctionHandler(
         );
       }
 
-      const isCreate = isRecord(event) && event.action === "createTransaction";
-      const isList = isRecord(event) && event.action === "listTransactions";
-      const isUpdate = isRecord(event) && event.action === "updateTransaction";
-      const isDelete = isRecord(event) && event.action === "deleteTransaction";
-      return failureResponse(
-        isUpdate
-          ? "TRANSACTION_UPDATE_FAILED"
-          : isDelete
-            ? "TRANSACTION_DELETE_FAILED"
-            : isCreate
-          ? "TRANSACTION_CREATE_FAILED"
-          : isList
-            ? "TRANSACTION_LIST_FAILED"
-            : "DEPENDENCY_ERROR",
-        isUpdate
-          ? "账单更新失败，请稍后重试"
-          : isDelete
-            ? "账单删除失败，请稍后重试"
-            : isCreate
-          ? "账单保存失败，请稍后重试"
-          : isList
-            ? "账单流水加载失败，请稍后重试"
-            : "记账服务暂时不可用，请稍后重试",
-        fallbackRequestId,
-        now,
-      );
+      const action =
+        isRecord(event) && typeof event.action === "string"
+          ? event.action
+          : "";
+      let code: ApiErrorCode = "DEPENDENCY_ERROR";
+      let message = "记账服务暂时不可用，请稍后重试";
+      if (action === "createTransaction") {
+        code = "TRANSACTION_CREATE_FAILED";
+        message = "账单保存失败，请稍后重试";
+      } else if (action === "updateTransaction") {
+        code = "TRANSACTION_UPDATE_FAILED";
+        message = "账单更新失败，请稍后重试";
+      } else if (action === "deleteTransaction") {
+        code = "TRANSACTION_DELETE_FAILED";
+        message = "账单删除失败，请稍后重试";
+      } else if (action === "listTransactions") {
+        code = "TRANSACTION_LIST_FAILED";
+        message = "账单流水加载失败，请稍后重试";
+      } else if (action === "getStatisticsSummary") {
+        code = "STATISTICS_QUERY_FAILED";
+        message = "月度统计加载失败，请稍后重试";
+      } else if (action === "getStatisticsTrend") {
+        code = "STATISTICS_TREND_FAILED";
+        message = "趋势统计加载失败，请稍后重试";
+      } else if (action === "getCategoryStatistics") {
+        code = "STATISTICS_CATEGORY_FAILED";
+        message = "分类统计加载失败，请稍后重试";
+      }
+      return failureResponse(code, message, fallbackRequestId, now);
     }
   };
 }

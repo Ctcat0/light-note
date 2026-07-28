@@ -137,10 +137,25 @@ test("收入账单支持新增、编辑、流水汇总和逻辑删除闭环", as
   });
   assert.equal(update.success, true);
 
+  const mismatchedCategory = await fixture.handler({
+    action: "updateTransaction",
+    requestId: "29292929-2929-4929-a929-292929292929",
+    payload: {
+      transactionId: create.data.transaction.transactionId,
+      amountInCents: 1880,
+      categoryId: fixture.seeded.expenseCategoryId,
+      accountId: fixture.seeded.accountId,
+      occurredAt: fixture.payload.occurredAt,
+      note: "奖金",
+      expectedVersion: 2,
+    },
+  });
+  assert.equal(mismatchedCategory.code, "CATEGORY_TYPE_INVALID");
+
   const list = await fixture.handler({
     action: "listTransactions",
     requestId: "33333333-3333-4333-a333-333333333333",
-    payload: { type: "income", year: 2026, month: 7, pageSize: 20, cursor: null },
+    payload: { filter: "income", year: 2026, month: 7, pageSize: 20, cursor: null },
   });
   assert.equal(list.success, true);
   if (
@@ -167,6 +182,18 @@ test("收入账单支持新增、编辑、流水汇总和逻辑删除闭环", as
       ?.isDeleted,
     true,
   );
+
+  const afterDelete = await fixture.handler({
+    action: "listTransactions",
+    requestId: "45454545-4545-4545-a545-454545454545",
+    payload: { filter: "all", year: 2026, month: 7, pageSize: 20, cursor: null },
+  });
+  assert.equal(afterDelete.success, true);
+  if (afterDelete.success && "pagination" in afterDelete.data) {
+    assert.deepEqual(afterDelete.data.items, []);
+    assert.equal(afterDelete.data.summary.monthIncomeInCents, 0);
+    assert.equal(afterDelete.data.summary.monthBalanceInCents, 0);
+  }
 });
 
 test("金额仅接受允许范围内的正整数分", async () => {
@@ -223,6 +250,45 @@ test("分类必须存在、属于本人、为支出且启用", async () => {
   }
 });
 
+test("收入分类必须存在、属于本人、类型匹配且启用", async () => {
+  const fixture = createFixture();
+  const other = seedLedgerUser(fixture.store, {
+    userId: "usr_owner_b",
+    openId: "openid-b",
+  });
+  const incomeCategory = fixture.store.categories.get(
+    fixture.seeded.incomeCategoryId,
+  );
+  assert.ok(incomeCategory);
+  const disabledIncomeCategoryId = `${fixture.seeded.userId}_disabled_income`;
+  fixture.store.categories.set(disabledIncomeCategoryId, {
+    ...incomeCategory,
+    _id: disabledIncomeCategoryId,
+    isEnabled: false,
+  });
+  const incomePayload = {
+    ...fixture.payload,
+    type: "income",
+    categoryId: fixture.seeded.incomeCategoryId,
+    includeInBudget: false,
+  };
+
+  for (const [changes, expectedCode] of [
+    [{ categoryId: "missing" }, "CATEGORY_NOT_FOUND"],
+    [{ categoryId: fixture.seeded.expenseCategoryId }, "CATEGORY_TYPE_INVALID"],
+    [{ categoryId: disabledIncomeCategoryId }, "CATEGORY_DISABLED"],
+    [{ categoryId: other.incomeCategoryId }, "CATEGORY_NOT_OWNED"],
+    [{ categoryType: "income" }, "INVALID_ARGUMENT"],
+  ] as const) {
+    const response = await fixture.handler({
+      action: "createTransaction",
+      requestId: createRequestIdForTest(),
+      payload: { ...incomePayload, ...changes },
+    });
+    assert.equal(response.code, expectedCode);
+  }
+});
+
 test("账户必须存在、属于本人且启用", async () => {
   const fixture = createFixture();
   const other = seedLedgerUser(fixture.store, {
@@ -250,7 +316,7 @@ test("身份缺失、未初始化、停用以及前端伪造身份均被拒绝",
   const missingResponse = await missing.handler({
     action: "listAccounts",
     requestId: REQUEST_ID,
-    payload: { includeDisabled: false },
+    payload: { transactionType: "expense", includeDisabled: false },
   });
   assert.equal(missingResponse.code, "UNAUTHENTICATED");
 
@@ -258,7 +324,7 @@ test("身份缺失、未初始化、停用以及前端伪造身份均被拒绝",
   const uninitializedResponse = await uninitialized.handler({
     action: "listAccounts",
     requestId: REQUEST_ID,
-    payload: { includeDisabled: false },
+    payload: { transactionType: "expense", includeDisabled: false },
   });
   assert.equal(uninitializedResponse.code, "USER_NOT_INITIALIZED");
 
@@ -272,7 +338,7 @@ test("身份缺失、未初始化、停用以及前端伪造身份均被拒绝",
   const disabledResponse = await disabled({
     action: "listAccounts",
     requestId: REQUEST_ID,
-    payload: { includeDisabled: false },
+    payload: { transactionType: "expense", includeDisabled: false },
   });
   assert.equal(disabledResponse.code, "USER_DISABLED");
 
@@ -300,7 +366,9 @@ test("相同 requestId 的连续和并发请求只创建一条，不同用户互
     first.success &&
     second.success &&
     "duplicate" in first.data &&
-    "duplicate" in second.data
+    "duplicate" in second.data &&
+    "transaction" in first.data &&
+    "transaction" in second.data
   ) {
     assert.equal(first.data.transaction.transactionId, second.data.transaction.transactionId);
     assert.equal([first.data.duplicate, second.data.duplicate].filter(Boolean).length, 1);
@@ -343,7 +411,25 @@ test("相同 requestId 的连续和并发请求只创建一条，不同用户互
   assert.equal(fixture.store.transactions.size, 3);
 });
 
-test("选项查询按收支类型返回当前用户启用分类并标记默认账户", async () => {
+test("收入创建复用 ownerId + requestId 幂等并发保障", async () => {
+  const fixture = createFixture();
+  const payload = {
+    ...fixture.payload,
+    type: "income",
+    categoryId: fixture.seeded.incomeCategoryId,
+    includeInBudget: false,
+  };
+  const [first, second] = await Promise.all([
+    fixture.handler({ action: "createTransaction", requestId: REQUEST_ID, payload }),
+    fixture.handler({ action: "createTransaction", requestId: REQUEST_ID, payload }),
+  ]);
+  assert.equal(first.success, true);
+  assert.equal(second.success, true);
+  assert.equal(fixture.store.transactions.size, 1);
+  assert.equal([...fixture.store.transactions.values()][0]?.type, "income");
+});
+
+test("选项查询按收支类型返回当前用户启用分类并标记默认固定渠道", async () => {
   const fixture = createFixture();
   const categories = await fixture.handler({
     action: "listCategories",
@@ -374,7 +460,7 @@ test("选项查询按收支类型返回当前用户启用分类并标记默认�
   const accounts = await fixture.handler({
     action: "listAccounts",
     requestId: "22222222-2222-4222-a222-222222222222",
-    payload: { includeDisabled: false },
+    payload: { transactionType: "expense", includeDisabled: false },
   });
   assert.equal(accounts.success, true);
   if (accounts.success && "items" in accounts.data) {
@@ -468,7 +554,7 @@ test("支出流水仅返回当前用户、指定月份、未删除支出并稳�
   const first = await fixture.handler({
     action: "listTransactions",
     requestId: REQUEST_ID,
-    payload: { type: "expense", year: 2026, month: 7, pageSize: 2, cursor: null },
+    payload: { filter: "expense", year: 2026, month: 7, pageSize: 2, cursor: null },
   });
   assert.equal(first.success, true);
   if (!first.success || !("pagination" in first.data)) return;
@@ -489,7 +575,7 @@ test("支出流水仅返回当前用户、指定月份、未删除支出并稳�
     action: "listTransactions",
     requestId: "22222222-2222-4222-a222-222222222222",
     payload: {
-      type: "expense",
+      filter: "expense",
       year: 2026,
       month: 7,
       pageSize: 2,
@@ -507,6 +593,62 @@ test("支出流水仅返回当前用户、指定月份、未删除支出并稳�
   );
   assert.equal(second.data.pagination.hasMore, false);
   assert.equal(second.data.summary.monthExpenseInCents, 1000);
+});
+
+test("混合流水单次分页稳定返回收入和支出且筛选互不串数据", async () => {
+  const fixture = createFixture();
+  const other = seedLedgerUser(fixture.store, {
+    userId: "usr_owner_b",
+    openId: "openid-b",
+  });
+  putTransaction(fixture, { sequence: 11, occurredAt: "2026-07-21T09:30:00.000Z", type: "expense", amountInCents: 1250 });
+  putTransaction(fixture, { sequence: 12, occurredAt: "2026-07-21T09:30:00.000Z", type: "income", amountInCents: 500000 });
+  putTransaction(fixture, { sequence: 13, occurredAt: "2026-07-20T09:30:00.000Z", type: "expense", amountInCents: 2300 });
+  putTransaction(fixture, { sequence: 14, occurredAt: "2026-07-19T09:30:00.000Z", type: "income", amountInCents: 8000 });
+  putTransaction(fixture, { sequence: 15, occurredAt: "2026-07-18T09:30:00.000Z", type: "income", isDeleted: true });
+  putTransaction(fixture, { sequence: 16, occurredAt: "2026-07-17T09:30:00.000Z", ownerId: other.userId });
+
+  const collected: TransactionRecord[] = [];
+  let cursor: string | null = null;
+  do {
+    const page = await fixture.handler({
+      action: "listTransactions",
+      requestId: createRequestIdForTest(),
+      payload: { filter: "all", year: 2026, month: 7, pageSize: 2, cursor },
+    });
+    assert.equal(page.success, true);
+    if (!page.success || !("pagination" in page.data)) return;
+    collected.push(
+      ...page.data.items.map((value) =>
+        fixture.store.transactions.get(value.transactionId),
+      ).filter((value): value is TransactionRecord => value !== undefined),
+    );
+    cursor = page.data.pagination.nextCursor;
+    assert.equal(page.data.summary.monthIncomeInCents, 508000);
+    assert.equal(page.data.summary.monthExpenseInCents, 3550);
+    assert.equal(page.data.summary.monthBalanceInCents, 504450);
+  } while (cursor !== null);
+
+  assert.deepEqual(
+    collected.map((value) => value._id),
+    [
+      "txn_0000000000000000000000000000000c",
+      "txn_0000000000000000000000000000000b",
+      "txn_0000000000000000000000000000000d",
+      "txn_0000000000000000000000000000000e",
+    ],
+  );
+  assert.equal(new Set(collected.map((value) => value._id)).size, 4);
+
+  const incomeOnly = await fixture.handler({
+    action: "listTransactions",
+    requestId: createRequestIdForTest(),
+    payload: { filter: "income", year: 2026, month: 7, pageSize: 20, cursor: null },
+  });
+  assert.equal(incomeOnly.success, true);
+  if (incomeOnly.success && "items" in incomeOnly.data && "summary" in incomeOnly.data) {
+    assert.deepEqual(incomeOnly.data.items.map((value) => value.type), ["income", "income"]);
+  }
 });
 
 test("独立月度汇总按用户、时区、收支类型和删除状态聚合", async () => {
@@ -616,10 +758,10 @@ test("流水查询拒绝非法年月、页大小、游标和跨月份旧游标",
   const fixture = createFixture();
   putTransaction(fixture, { sequence: 1, occurredAt: "2026-07-21T09:30:00.000Z" });
   for (const [payload, code] of [
-    [{ type: "expense", year: 26, month: 7, pageSize: 20, cursor: null }, "INVALID_YEAR"],
-    [{ type: "expense", year: 2026, month: 13, pageSize: 20, cursor: null }, "INVALID_MONTH"],
-    [{ type: "expense", year: 2026, month: 7, pageSize: 51, cursor: null }, "INVALID_PAGE_SIZE"],
-    [{ type: "expense", year: 2026, month: 7, pageSize: 20, cursor: "not-valid!" }, "INVALID_CURSOR"],
+    [{ filter: "expense", year: 26, month: 7, pageSize: 20, cursor: null }, "INVALID_YEAR"],
+    [{ filter: "expense", year: 2026, month: 13, pageSize: 20, cursor: null }, "INVALID_MONTH"],
+    [{ filter: "expense", year: 2026, month: 7, pageSize: 51, cursor: null }, "INVALID_PAGE_SIZE"],
+    [{ filter: "expense", year: 2026, month: 7, pageSize: 20, cursor: "not-valid!" }, "INVALID_CURSOR"],
   ] as const) {
     const response = await fixture.handler({ action: "listTransactions", requestId: REQUEST_ID, payload });
     assert.equal(response.code, code);
@@ -628,34 +770,34 @@ test("流水查询拒绝非法年月、页大小、游标和跨月份旧游标",
   const july = await fixture.handler({
     action: "listTransactions",
     requestId: REQUEST_ID,
-    payload: { type: "expense", year: 2026, month: 7, pageSize: 1, cursor: null },
+    payload: { filter: "expense", year: 2026, month: 7, pageSize: 1, cursor: null },
   });
   if (!july.success || !("pagination" in july.data)) return;
   putTransaction(fixture, { sequence: 2, occurredAt: "2026-07-20T09:30:00.000Z" });
   const page = await fixture.handler({
     action: "listTransactions",
     requestId: "22222222-2222-4222-a222-222222222222",
-    payload: { type: "expense", year: 2026, month: 7, pageSize: 1, cursor: null },
+    payload: { filter: "expense", year: 2026, month: 7, pageSize: 1, cursor: null },
   });
   if (!page.success || !("pagination" in page.data)) return;
   const wrongMonth = await fixture.handler({
     action: "listTransactions",
     requestId: "33333333-3333-4333-a333-333333333333",
-    payload: { type: "expense", year: 2026, month: 6, pageSize: 1, cursor: page.data.pagination.nextCursor },
+    payload: { filter: "expense", year: 2026, month: 6, pageSize: 1, cursor: page.data.pagination.nextCursor },
   });
   assert.equal(wrongMonth.code, "INVALID_CURSOR");
-  const wrongType = await fixture.handler({
+  const wrongFilter = await fixture.handler({
     action: "listTransactions",
     requestId: "44444444-4444-4444-a444-444444444444",
     payload: {
-      type: "income",
+      filter: "income",
       year: 2026,
       month: 7,
       pageSize: 1,
       cursor: page.data.pagination.nextCursor,
     },
   });
-  assert.equal(wrongType.code, "INVALID_CURSOR");
+  assert.equal(wrongFilter.code, "INVALID_CURSOR");
 });
 
 test("空月份汇总为零且列表和汇总依赖失败返回各自受控错误", async () => {
@@ -663,7 +805,7 @@ test("空月份汇总为零且列表和汇总依赖失败返回各自受控错�
   const empty = await fixture.handler({
     action: "listTransactions",
     requestId: REQUEST_ID,
-    payload: { type: "expense", year: 2026, month: 6, pageSize: 20, cursor: null },
+    payload: { filter: "expense", year: 2026, month: 6, pageSize: 20, cursor: null },
   });
   assert.equal(empty.success, true);
   if (empty.success && "pagination" in empty.data) {
@@ -677,7 +819,7 @@ test("空月份汇总为零且列表和汇总依赖失败返回各自受控错�
   const listFailure = await fixture.handler({
     action: "listTransactions",
     requestId: "22222222-2222-4222-a222-222222222222",
-    payload: { type: "expense", year: 2026, month: 7, pageSize: 20, cursor: null },
+    payload: { filter: "expense", year: 2026, month: 7, pageSize: 20, cursor: null },
   });
   assert.equal(listFailure.code, "TRANSACTION_LIST_FAILED");
 
@@ -685,7 +827,7 @@ test("空月份汇总为零且列表和汇总依赖失败返回各自受控错�
   const summaryFailure = await fixture.handler({
     action: "listTransactions",
     requestId: "33333333-3333-4333-a333-333333333333",
-    payload: { type: "expense", year: 2026, month: 7, pageSize: 20, cursor: null },
+    payload: { filter: "expense", year: 2026, month: 7, pageSize: 20, cursor: null },
   });
   assert.equal(summaryFailure.code, "TRANSACTION_SUMMARY_FAILED");
 });
@@ -841,12 +983,12 @@ test("跨月编辑后原月份移除且新月份列表和汇总包含新值", as
   const july = await fixture.handler({
     action: "listTransactions",
     requestId: "ffffffff-ffff-4fff-afff-ffffffffffff",
-    payload: { type: "expense", year: 2026, month: 7, pageSize: 20, cursor: null },
+    payload: { filter: "expense", year: 2026, month: 7, pageSize: 20, cursor: null },
   });
   const june = await fixture.handler({
     action: "listTransactions",
     requestId: "12121212-1212-4212-a212-121212121212",
-    payload: { type: "expense", year: 2026, month: 6, pageSize: 20, cursor: null },
+    payload: { filter: "expense", year: 2026, month: 6, pageSize: 20, cursor: null },
   });
   assert.equal(july.success, true);
   assert.equal(june.success, true);
@@ -857,6 +999,59 @@ test("跨月编辑后原月份移除且新月份列表和汇总包含新值", as
   if (june.success && "items" in june.data && "summary" in june.data) {
     assert.deepEqual(june.data.items.map((item) => item.transactionId), [created.data.transaction.transactionId]);
     assert.equal(june.data.summary.monthExpenseInCents, 1880);
+  }
+});
+
+test("收入跨月编辑同步更新原月、新月流水与结余", async () => {
+  const fixture = createFixture();
+  const created = await fixture.handler({
+    action: "createTransaction",
+    requestId: REQUEST_ID,
+    payload: {
+      ...fixture.payload,
+      type: "income",
+      categoryId: fixture.seeded.incomeCategoryId,
+      includeInBudget: false,
+      amountInCents: 500000,
+    },
+  });
+  if (!created.success || !("transaction" in created.data)) return;
+  const updated = await fixture.handler({
+    action: "updateTransaction",
+    requestId: createRequestIdForTest(),
+    payload: {
+      transactionId: created.data.transaction.transactionId,
+      amountInCents: 520000,
+      categoryId: fixture.seeded.incomeCategoryId,
+      accountId: fixture.seeded.accountId,
+      occurredAt: "2026-06-20T09:30:00.000Z",
+      note: "工资及补贴",
+      expectedVersion: 1,
+    },
+  });
+  assert.equal(updated.success, true);
+
+  const july = await fixture.handler({
+    action: "listTransactions",
+    requestId: createRequestIdForTest(),
+    payload: { filter: "all", year: 2026, month: 7, pageSize: 20, cursor: null },
+  });
+  const june = await fixture.handler({
+    action: "listTransactions",
+    requestId: createRequestIdForTest(),
+    payload: { filter: "all", year: 2026, month: 6, pageSize: 20, cursor: null },
+  });
+  assert.equal(july.success, true);
+  assert.equal(june.success, true);
+  if (july.success && "pagination" in july.data) {
+    assert.deepEqual(july.data.items, []);
+    assert.equal(july.data.summary.monthIncomeInCents, 0);
+    assert.equal(july.data.summary.monthBalanceInCents, 0);
+  }
+  if (june.success && "pagination" in june.data) {
+    assert.deepEqual(june.data.items.map((value) => value.type), ["income"]);
+    assert.equal(june.data.summary.monthIncomeInCents, 520000);
+    assert.equal(june.data.summary.monthBalanceInCents, 520000);
   }
 });
 
@@ -881,7 +1076,7 @@ test("逻辑删除保留记录、退出列表汇总并支持同请求重试", as
   assert.equal(different.code, "TRANSACTION_ALREADY_DELETED");
   const detail = await fixture.handler({ action: "getTransaction", requestId: "99999999-9999-4999-a999-999999999999", payload: { transactionId } });
   assert.equal(detail.code, "TRANSACTION_NOT_FOUND");
-  const list = await fixture.handler({ action: "listTransactions", requestId: "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa", payload: { type: "expense", year: 2026, month: 7, pageSize: 20, cursor: null } });
+  const list = await fixture.handler({ action: "listTransactions", requestId: "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa", payload: { filter: "expense", year: 2026, month: 7, pageSize: 20, cursor: null } });
   assert.equal(list.success, true);
   if (list.success && "items" in list.data && "summary" in list.data) {
     assert.deepEqual(list.data.items, []);

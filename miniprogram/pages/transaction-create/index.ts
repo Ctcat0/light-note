@@ -14,12 +14,12 @@ import type {
   Transaction,
   TransactionFormErrors,
   TransactionFormState,
-  TransactionType,
+  SupportedTransactionType,
 } from "../../types/transaction";
 import type { PageViewState } from "../../types/page-state";
 
 interface LedgerPageData {
-  transactionType: TransactionType;
+  transactionType: SupportedTransactionType;
   transactionTypeLabel: string;
   viewState: PageViewState;
   errorMessage: string;
@@ -44,10 +44,15 @@ interface ValueChangeEvent {
   detail: { value: string };
 }
 
+interface TransactionTypeTapEvent {
+  currentTarget: { dataset: { type?: string } };
+}
+
 interface LedgerPageMethods {
   loadOptions(): Promise<void>;
   syncValidation(form?: TransactionFormState): void;
   updateForm(changes: Partial<TransactionFormState>): void;
+  handleTransactionTypeChange(event: TransactionTypeTapEvent): void;
   handleAmountInput(event: ValueChangeEvent): void;
   handleCategoryChange(event: ValueChangeEvent): void;
   handleAccountChange(event: ValueChangeEvent): void;
@@ -102,10 +107,12 @@ Page<LedgerPageData, LedgerPageMethods>({
   },
 
   onLoad(options: Record<string, string | undefined>): void {
-    const transactionType: TransactionType =
-      options.type === "income" ? "income" : "expense";
-    const transactionTypeLabel = transactionType === "expense" ? "支出" : "收入";
     const settings = getApp<IAppOption>().globalData.userInitialization?.settings;
+    const transactionType: SupportedTransactionType =
+      options.type === "income" || options.type === "expense"
+        ? options.type
+        : settings?.defaultTransactionType ?? "expense";
+    const transactionTypeLabel = transactionType === "expense" ? "支出" : "收入";
     const timeZone = settings?.timezone ?? DEFAULT_TIME_ZONE;
     this.setData({
       transactionType,
@@ -157,7 +164,7 @@ Page<LedgerPageData, LedgerPageMethods>({
 
     const [categoryResult, accountResult] = await Promise.allSettled([
       ledgerService.listCategories(this.data.transactionType),
-      ledgerService.listAccounts(),
+      ledgerService.listAccounts(this.data.transactionType),
     ]);
     if (this.data.destroyed) {
       return;
@@ -248,6 +255,43 @@ Page<LedgerPageData, LedgerPageMethods>({
       noteLength: form.note.length,
     });
     this.syncValidation(form);
+  },
+
+  handleTransactionTypeChange(event: TransactionTypeTapEvent): void {
+    const type = event.currentTarget.dataset.type;
+    if (
+      (type !== "expense" && type !== "income") ||
+      type === this.data.transactionType ||
+      this.data.submitting ||
+      this.data.viewState === "loading"
+    ) {
+      return;
+    }
+    const transactionTypeLabel = type === "expense" ? "支出" : "收入";
+    const form: TransactionFormState = {
+      ...this.data.form,
+      categoryId: "",
+      accountId: "",
+      requestId: createRequestId(),
+    };
+    this.setData({
+      transactionType: type,
+      transactionTypeLabel,
+      viewState: "loading",
+      categories: [],
+      accounts: [],
+      categoryIndex: 0,
+      accountIndex: 0,
+      form,
+      formErrors: createEmptyErrors(),
+      canSubmit: false,
+      submitErrorMessage: "",
+      successMessage: "",
+      savedTransaction: null,
+      savedAmountDisplay: "",
+    });
+    wx.setNavigationBarTitle({ title: `新增${transactionTypeLabel}` });
+    void this.loadOptions();
   },
 
   handleAmountInput(event: ValueChangeEvent): void {

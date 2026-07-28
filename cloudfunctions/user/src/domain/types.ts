@@ -2,6 +2,7 @@ import type { ApiErrorCode } from "../../../../shared/types/api";
 import type {
   AccountType,
   CategoryType,
+  DefaultTransactionType,
   DefaultLocation,
   Theme,
 } from "../../../../shared/types/user";
@@ -29,8 +30,12 @@ export interface UserSettingsRecord {
   ownerId: string;
   currency: "CNY";
   timezone: string;
-  defaultAccountId: string | null;
+  defaultTransactionType: DefaultTransactionType;
+  defaultExpenseAccountId: string;
+  defaultIncomeAccountId: string;
+  defaultAccountId?: string | null;
   defaultLocation: DefaultLocation | null;
+  preferGeolocation: boolean;
   showWeather: boolean;
   showBudget: boolean;
   theme: Theme;

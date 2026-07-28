@@ -11,5 +11,8 @@ declare const wx: {
       data: object;
     }): Promise<{ result?: unknown }>;
   };
+  getStorageSync(key: string): unknown;
+  setStorageSync(key: string, data: unknown): void;
+  removeStorageSync(key: string): void;
   showToast(options: { title: string; icon: "success" | "error" | "loading" | "none" }): void;
 };

@@ -2,9 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createUserFunctionHandler } from "../cloudfunctions/user/src/application/handler";
 import {
+  createCloudBaseUserInitializationStore,
   isMissingDocumentError,
   readDocumentData,
+  type CloudDatabase,
 } from "../cloudfunctions/user/src/infrastructure/cloudbase-store";
+import type { UserSettingsRecord } from "../cloudfunctions/user/src/domain/types";
 import {
   callCloudFunctionWithMetadata,
   initializeCloud,
@@ -38,8 +41,11 @@ const INITIALIZATION_RESULT: UserInitializationResult = {
   settings: {
     currency: "CNY",
     timezone: "Asia/Shanghai",
-    defaultAccountId: "acc_wechat",
+    defaultTransactionType: "expense",
+    defaultExpenseAccountId: "acc_wechat",
+    defaultIncomeAccountId: "acc_wechat",
     defaultLocation: null,
+    preferGeolocation: false,
     showWeather: true,
     showBudget: false,
     theme: "system",
@@ -158,6 +164,63 @@ test("CloudBase 文档不存在的对象错误和数组响应均可识别", () =
   assert.equal(readDocumentData([]), null);
 });
 
+test("CloudBase 设置更新使用整文档覆盖，支持默认城市从 null 变为对象", async () => {
+  let setPayload: Record<string, unknown> | null = null;
+  let updateCalls = 0;
+  const database = {
+    collection(): never {
+      throw new Error("本测试不应执行事务外查询");
+    },
+    async runTransaction<T>(operation: (transaction: unknown) => Promise<T>): Promise<T> {
+      return operation({
+        collection: () => ({
+          doc: () => ({
+            get: async () => ({ data: null }),
+            set: async (options: { data: Record<string, unknown> }) => {
+              setPayload = options.data;
+            },
+            update: async () => {
+              updateCalls += 1;
+            },
+          }),
+        }),
+      });
+    },
+  } as unknown as CloudDatabase;
+  const settings: UserSettingsRecord = {
+    _id: "set_contract",
+    ownerId: "usr_contract",
+    currency: "CNY",
+    timezone: "Asia/Shanghai",
+    defaultTransactionType: "expense",
+    defaultExpenseAccountId: "acc_wechat",
+    defaultIncomeAccountId: "acc_wechat",
+    defaultLocation: {
+      locationKey: "open-meteo:39.9042,116.4074",
+      displayName: "北京 · 北京市 · 中国",
+      source: "manual",
+    },
+    preferGeolocation: false,
+    showWeather: true,
+    showBudget: false,
+    theme: "system",
+    initializationVersion: 2,
+    createdAt: NOW,
+    updatedAt: NOW,
+    version: 2,
+  };
+
+  await createCloudBaseUserInitializationStore(database).runTransaction(
+    (transaction) => transaction.updateSettings(settings),
+  );
+
+  assert.equal(updateCalls, 0);
+  const actualPayload = setPayload as Record<string, unknown> | null;
+  assert.ok(actualPayload);
+  assert.equal(actualPayload._id, undefined);
+  assert.deepEqual(actualPayload.defaultLocation, settings.defaultLocation);
+});
+
 test("真实云函数响应契约可以被前端解析且不暴露 OPENID", async () => {
   const handler = createUserFunctionHandler({
     getOpenId: () => "trusted-openid-contract",
@@ -177,7 +240,8 @@ test("真实云函数响应契约可以被前端解析且不暴露 OPENID", asyn
 
   const parsed = parseInitializationResult(response.data);
   assert.equal(parsed.initialization.completed, true);
-  assert.equal(parsed.settings.defaultAccountId !== null, true);
+  assert.equal(parsed.settings.defaultExpenseAccountId.length > 0, true);
+  assert.equal(parsed.settings.defaultIncomeAccountId.length > 0, true);
   assert.equal(response.requestId, REQUEST_ID);
   assert.equal(JSON.stringify(response).includes("trusted-openid-contract"), false);
 });
