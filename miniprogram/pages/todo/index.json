@@ -1,4 +1,5 @@
 {
-  "navigationBarTitleText": "待办"
+  "navigationBarTitleText": "待办",
+  "enablePullDownRefresh": true,
+  "onReachBottomDistance": 120
 }
-

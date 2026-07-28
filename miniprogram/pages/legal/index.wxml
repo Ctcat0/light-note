@@ -1,0 +1,28 @@
+<view class="page-shell legal-page">
+  <view class="page-header"><text class="page-title">{{title}}</text></view>
+
+  <view class="legal-card" wx:if="{{type === 'privacy'}}">
+    <text class="legal-heading">我们处理的数据</text>
+    <text class="legal-text">轻记使用微信可信身份区分用户，并保存你主动创建的收支、待办、固定支付/收款渠道和设置。位置信息只在你点击“使用当前位置”或主动开启“优先使用定位”后，于天气页获取并用于选择城市；服务端仅保存所选城市的降精度位置标识，不保存轨迹。</text>
+    <text class="legal-heading">第三方天气服务</text>
+    <text class="legal-text">天气查询由 CloudBase 云函数代理访问 Open-Meteo。共享天气缓存不包含微信身份或个人轨迹，前端不保存第三方密钥。</text>
+    <text class="legal-heading">存储与删除</text>
+    <text class="legal-text">业务数据存放于 CloudBase，客户端不能直接访问数据库。你可以在“我的 / 设置”申请删除个人数据；申请有 7 天冷静期，期满后由受保护的后台执行器分批删除。</text>
+  </view>
+
+  <view class="legal-card" wx:elif="{{type === 'agreement'}}">
+    <text class="legal-heading">使用范围</text>
+    <text class="legal-text">轻记是个人收支、待办和天气信息工具，不提供资产托管、支付、专业财务或投资建议。微信、支付宝、银行卡、现金和其他仅表示支付或收款方式。</text>
+    <text class="legal-heading">用户责任</text>
+    <text class="legal-text">请妥善维护微信账号安全，并确保录入内容合法。天气数据可能因网络、缓存或供应商状态存在延迟，不应作为高风险决策的唯一依据。</text>
+    <text class="legal-heading">服务变更</text>
+    <text class="legal-text">开发版功能和条款可能在正式发布前调整；重要变更会同步更新本页面和项目文档。</text>
+  </view>
+
+  <view class="legal-card" wx:else>
+    <text class="legal-heading">轻记</text>
+    <text class="legal-text">版本：{{version}}</text>
+    <text class="legal-text">一款面向个人的微信小程序，用于记录收入支出、管理待办并查看天气。固定渠道只表示支付或收款方式，不承担资产核算。</text>
+    <text class="legal-text">天气数据由 Open-Meteo 提供。</text>
+  </view>
+</view>

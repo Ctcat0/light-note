@@ -15,7 +15,7 @@
 - 首页天气、待办、收支聚合；
 - 数据隔离、错误处理、基础隐私与个人数据删除入口。
 
-以下需求不进入 MVP 技术实现：转账、账户余额核算、重复任务、订阅消息、日历视图、小时预报、户外任务联动、分类预算、附件、数据导出、回收站、OCR、AI、家庭账本和协作。为避免隐式承诺，MVP 数据模型与 API 不为这些功能预留复杂行为。
+以下需求不进入当前技术实现：资金渠道自定义管理、资产核算、重复任务、订阅消息、日历视图、小时预报、户外任务联动、分类预算、附件、数据导出、回收站、OCR、AI、家庭账本和协作。固定的微信、支付宝、银行卡、现金和其他仅作为账单的支付/收款方式。
 
 ### 1.1 规范命名
 
@@ -30,7 +30,7 @@
 | 服务端响应时间 | `serverTime` | 带 `Z` 或偏移量的 ISO 8601 字符串 |
 | 并发版本 | `version` | 从 1 开始的整数，更新时递增 |
 
-`users` 仅保存身份和账户状态；默认账户、默认城市、时区等偏好只保存在 `user_settings`，避免双数据源。
+`users` 仅保存身份和账号状态；默认记账类型、默认支付/收款方式、默认城市、定位偏好和时区只保存在 `user_settings`，避免双数据源。
 
 ## 2. 系统上下文与请求链路
 
@@ -88,7 +88,7 @@ miniprogram/
 
 ### 3.3 Service 层
 
-- 按域提供 `userService`、`ledgerService`、`todoService`、`weatherService`、`homeService`；
+- 按域提供 `userService`、`ledgerService`、`statisticsService`、`todoService`、`weatherService`、`homeService`；统计 service 仍调用现有 `ledger` 云函数的只读 action；
 - 统一封装云函数名称、action、请求 ID、超时、响应解包和错误映射；
 - 将 API DTO 转为前端模型，不泄漏 CloudBase 或天气供应商结构；
 - 不弹 toast、不改页面数据、不读写 WXML；
@@ -133,7 +133,7 @@ cloudfunctions/<domain>/
 ### 5.1 身份建立
 
 - 微信小程序调用的普通云函数使用 `wx-server-sdk` 的 `cloud.getWXContext()` 获取 `OPENID`；`OPENID` 来自可信调用链，不从 `event` 读取。
-- `user.init` 按 `openId` 查找 `users`。不存在时创建 `users`、`user_settings`、默认账户、默认分类和默认待办清单；初始化需可重复执行。
+- `user.init` 按 `openId` 查找 `users`。不存在时创建 `users`，并幂等补齐 `user_settings`、固定支付/收款渠道和默认分类；默认待办清单留给待办域任务。
 - 其他接口必须解析到 `status = active` 的内部用户，得到 `users._id` 作为当前 `ownerId`。
 - `UNIONID` 不是 MVP 身份主键，也不自建 JWT。若未来扩展到非微信客户端，需另行设计认证迁移。
 
@@ -152,15 +152,15 @@ CloudBase 官方说明 `getWXContext()` 的身份字段来自平台调用链，�
 
 ### 6.1 调用边界
 
-- 天气供应商 API Key 仅配置为云函数环境变量，例如 `WEATHER_API_KEY`；不得写入代码、`cloudbaserc.json`、前端配置、日志或文档示例值。
-- 开发、测试、生产 CloudBase 环境使用独立密钥和配额。
-- 云函数启动时校验必需环境变量；缺失时返回受控的 `WEATHER_UNAVAILABLE`，日志不输出变量值。
-- CloudBase 支持在函数运行时读取环境变量，且官方建议将认证 Key 从代码中移出：[云函数环境变量](https://docs.cloudbase.net/cloud-function/function-configuration/env)。
+- MVP 天气供应商 adapter 采用 Open-Meteo 免费开放接口。Forecast 与 Geocoding host 固定在 adapter 内，不需要 API Key，客户端不能改变 host、path 或查询字段。
+- 免费开放接口仅用于个人非商业场景，受每分钟、每小时和每日调用上限约束且无可用性承诺；现有服务端缓存与用户限流共同控制请求量。
+- 天气页面和首页展示 `Open-Meteo` 数据来源署名；商业发布前必须重新确认许可，或切换其商业端点/自托管服务。
 
 ### 6.2 位置输入
 
 - 优先使用 `user_settings.defaultLocation.locationKey`；也允许用户主动提交城市搜索结果中的 `locationKey`。
-- 经纬度只能在用户主动授权后临时传给 `weather.searchLocations` 或定位解析动作；服务端校验范围并降精度，不保存轨迹。
+- Open-Meteo 位置标识统一包装为 `open-meteo:<latitude>,<longitude>`；经纬度最多保留四位小数，供应商字段仅存在 adapter 内，不向页面扩散。
+- 经纬度只能在用户主动授权后临时传给 `weather.searchLocations`；服务端校验范围并四舍五入到小数点后 2 位，不保存轨迹。
 - 前端不得直接提交供应商 URL、任意 host 或任意查询参数，防止代理被滥用。
 
 ### 6.3 缓存流程
@@ -172,7 +172,7 @@ flowchart TD
     B -- 否 --> D["调用天气 Provider"]
     D --> E{"供应商成功且响应通过校验?"}
     E -- 是 --> F["标准化并更新缓存"]
-    F --> G["返回 fresh data"]
+    F --> G["返回 refreshed data"]
     E -- 否 --> H{"存在 staleUntil 内的旧缓存?"}
     H -- 是 --> I["返回 stale data + 标记"]
     H -- 否 --> J["返回 WEATHER_UNAVAILABLE"]
@@ -197,7 +197,6 @@ flowchart TD
 - 前端接收 `"12.34"` 这类字符串，用字符串分段算法转换为 `1234`，禁止使用 `parseFloat(value) * 100` 直接入库。
 - 服务端再次检查 `Number.isSafeInteger`、正数和产品上限；单笔上限尚未确认，配置前接口必须使用一个经产品确认的常量。
 - 预算使用 `budgetAmountInCents`；收入、支出、结余和预算汇总仅做整数加减。
-- 账户余额计算不属于 MVP，因此账户模型不保存或维护 `currentBalance`，避免给用户虚假的资产准确性。
 
 ## 8. 时间处理
 
@@ -213,9 +212,25 @@ flowchart TD
 
 ## 9. 一致性、幂等与并发
 
+- 用户初始化为用户、设置、系统分类和系统账户生成确定性文档 ID，并在单个服务端事务内通过 `doc` 读写；这符合 CloudBase 事务仅支持单文档操作的限制。
+- `users.openId`、`user_settings.ownerId`、分类稳定键和账户稳定键仍需唯一索引作为数据完整性第二道防线；索引未建立前确定性 `_id` 仍可阻止同一模板的并发重复，但上线前不得省略索引配置。
+- 重复初始化只补齐缺失稳定键，不更新现有默认项的名称、图标、排序或启用状态；`initializationVersion` 用于区分未完成初始化与用户主动清空的设置。
 - 创建账单、创建待办必须传 UUID 格式 `requestId`；集合对 `{ ownerId, requestId }` 建唯一索引，重复请求返回首次创建的资源。
-- 更新和删除传 `expectedVersion`，查询条件同时包含 `ownerId`、`_id`、`version`、`isDeleted: false`；成功后 `version + 1`。版本不匹配返回 `VERSION_CONFLICT`。
+- 当前收入和支出创建均使用 `ownerId + requestId` 派生确定性 `transactions._id`，并在 CloudBase 事务内先读取该文档再创建；快速并发请求竞争同一文档，重试时会核对首次记录与规范化请求内容，相同内容返回首次记录，不同内容拒绝复用 requestId。确定性 ID 不替代唯一索引，后者仍防止未来其他入口按相同业务键写出重复数据。
+- 当前收支流水默认在一次查询中使用 `ownerId + isDeleted=false + type in [expense, income]` 和用户时区月份半开区间，可选 `all | expense | income` 最小筛选，按 `occurredAt DESC, _id DESC` 做全局复合游标分页；游标绑定筛选和年月并严格解析，但不承担授权，服务端每页都重新附加可信用户条件。这样收入和支出不会因双查询合并而跨页重复或遗漏。全月收入和支出分别由云端聚合计算，结余使用整数分相减，不从前端已加载页推算。
+- 统计页通过 `getStatisticsSummary`、`getStatisticsTrend` 和 `getCategoryStatistics` 三个只读 action 并行加载。服务端按用户时区计算月份边界并在数据库侧聚合；趋势固定支持 6/12 个月、补齐空月并按旧到新返回。分类统计聚合后批量关联当前分类名称，缺失分类以“已删除分类”保留金额。前端允许模块级失败，不因一个分类请求失败清空其他已成功数据。
+- 独立 `ledger.getMonthlySummary` 继续供单模块页面复用。首页现由 `home.getOverview` 在可信身份和用户时区下并行聚合当日/月收支、今日/逾期待办与天气；三个模块各自返回 `success/unavailable`，任一失败不清空其他成功数据。
+- 更新和删除传 `expectedVersion`，事务读取后同时校验 `ownerId`、`_id`、`version`、`isDeleted: false`；成功后 `version + 1`。通用资源版本不匹配返回 `VERSION_CONFLICT`，账单使用更具体的 `TRANSACTION_CONFLICT`。
+- 当前收入和支出新增、编辑、删除只写入交易事实；`accounts` 仅在创建/编辑时用于校验资金渠道的归属、存在性和启用状态，不因交易发生而变更。记录保存最近一次变更 requestId、操作类型和服务端请求指纹，使成功响应丢失后的同请求重试返回等效结果，同 requestId 改变 payload 则拒绝。
 - 逻辑删除统一设置 `isDeleted = true`、`deletedAt` 和新版本；所有正常查询显式过滤 `isDeleted: false`。
+
+### 6.6 设置与个人数据删除
+
+- `user_settings` 是唯一偏好集合；`updateSettings` 使用 `group = ledger | weather` 的判别联合，整文档写回前只应用当前分组字段，避免天气更新覆盖记账默认值。
+- 两个默认固定渠道均在云函数事务内校验当前 `ownerId`、存在性和启用状态；`updatedAt` 由服务端生成。
+- 小程序只调用 `dataDeletion.getStatus/request/cancel`。申请使用顶层 `requestId` 幂等，冷静期固定 7 天，`pending` 可撤销。
+- `dataDeletionExecutor` 是独立云函数，不进入前端常量；它验证云端令牌，按执行租约认领到期申请，逐集合、逐批按 `ownerId` 删除，最后删除用户文档并将申请标记完成。
+- 失败批次保存受控错误码、进度和下一重试时间；重复执行和已删除文档均安全。共享天气缓存不包含用户身份，不随个人删除清理。
 - 基础预算按 `{ ownerId, monthKey }` 唯一，并采用 upsert 语义；花费值从账单聚合，不重复存储为事实字段。
 - 首页聚合的多个模块独立返回状态；天气失败不回滚或阻断账目、待办摘要。
 
@@ -241,8 +256,8 @@ type ApiResponse<T> =
 
 ## 11. 环境、部署与安全边界
 
-- 至少划分开发、测试、生产三个 CloudBase 环境，集合、云函数、存储和天气密钥互相隔离；
-- 小程序前端只持有可公开的环境 ID 映射，不持有 AppSecret 或第三方 Key；
+- 至少划分开发、测试、生产三个 CloudBase 环境，集合、云函数、存储和天气密钥互相隔离；小程序分别按 `develop`、`trial`、`release` 选择对应环境；
+- 环境 ID 通过被忽略的 `.env.local` 或发布机环境变量生成前端运行时配置；生成文件不纳入版本控制，前端不持有 AppSecret 或第三方 Key；
 - 环境变量配置文件若纳入版本控制，只能声明变量名或空占位，不得包含真实值；
 - 云函数使用当前环境默认凭据访问 CloudBase，不在代码中配置永久 SecretId/SecretKey；
 - 业务集合关闭小程序客户端直接读写；天气缓存也仅云函数可读写；
@@ -252,14 +267,13 @@ type ApiResponse<T> =
 
 以下项目在编码前仍需确认，不能由实现者静默决定：
 
-1. 天气供应商、套餐限额、城市 ID 体系、许可归属和署名要求；
-2. CloudBase 开发/测试/生产环境 ID、部署工具与 Node.js 运行时版本；
+1. Open-Meteo 非商业许可是否覆盖最终发布形态；若商业化，需选择商业端点或自托管；
+2. CloudBase 测试/生产环境 ID 与最终发布流水线；当前开发环境部署基线采用 `Nodejs16.13`；
 3. 微信基础库最低版本与目标机型范围；
 4. 是否使用 TDesign、WeUI 或纯原生组件，以及包体积预算；
 5. 单笔账单金额上限、备注/标题长度等产品阈值；
-6. 用户数据删除是否立即执行、是否设置冷静期及日志保留周期；
-7. 手动城市数据来源，以及定位坐标允许传给天气供应商的精度；
-8. 隐私政策文本、天气供应商披露和小程序后台隐私接口配置；
-9. MVP 基础预算是否必须首发；若延期，首页预算字段需同时隐藏。
+6. 删除申请审计记录和云函数日志的生产保留周期；
+7. 隐私政策文本、Open-Meteo 第三方处理披露和小程序后台隐私接口配置；
+8. MVP 基础预算是否必须首发；若延期，首页预算字段需同时隐藏。
 
 这些待定项不影响当前字段与接口命名基线；影响实现行为的值应在开发任务开始前形成简短决策记录。

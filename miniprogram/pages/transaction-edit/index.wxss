@@ -1,0 +1,19 @@
+@import "../transaction-create/index.wxss";
+
+.delete-button {
+  width: 190rpx;
+  height: 88rpx;
+  margin: 0;
+  border: 1rpx solid #d9a3a0;
+  border-radius: 18rpx;
+  background: #fff7f6;
+  color: #b34040;
+  font-size: 28rpx;
+  line-height: 86rpx;
+}
+
+.edit-action-dock {
+  display: grid;
+  grid-template-columns: 190rpx 1fr;
+  gap: 16rpx;
+}

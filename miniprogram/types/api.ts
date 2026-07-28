@@ -3,6 +3,6 @@ export type {
   ApiFailure,
   ApiResponse,
   ApiSuccess,
+  CloudFunctionResponse,
   CloudFunctionRequest,
 } from "../../shared/types/api";
-

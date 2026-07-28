@@ -1,0 +1,154 @@
+<view class="page-shell ledger-page">
+  <view class="page-header">
+    <text class="page-title">记一笔</text>
+    <text class="page-description">填写金额并选择{{transactionType === 'income' ? '收款方式' : '支付方式'}}，保存按钮会一直停留在底部。</text>
+  </view>
+
+  <view class="transaction-type-switch {{viewState === 'loading' ? 'disabled' : ''}}" role="tablist">
+    <view
+      class="transaction-type-option {{transactionType === 'expense' ? 'active' : ''}}"
+      role="tab"
+      aria-selected="{{transactionType === 'expense'}}"
+      data-type="expense"
+      bindtap="handleTransactionTypeChange"
+    >支出</view>
+    <view
+      class="transaction-type-option {{transactionType === 'income' ? 'active' : ''}}"
+      role="tab"
+      aria-selected="{{transactionType === 'income'}}"
+      data-type="income"
+      bindtap="handleTransactionTypeChange"
+    >收入</view>
+  </view>
+
+  <view class="page-state-card" wx:if="{{viewState === 'loading'}}">
+    <app-loading message="正在加载分类和资金渠道" />
+  </view>
+
+  <view class="page-state-card" wx:elif="{{viewState === 'error'}}">
+    <app-error-state
+      title="记账选项加载失败"
+      message="{{errorMessage}}"
+      bind:retry="handleRetry"
+    />
+  </view>
+
+  <block wx:else>
+    <view class="empty-stack" wx:if="{{categories.length === 0 || accounts.length === 0}}">
+      <app-empty
+        wx:if="{{categories.length === 0}}"
+        title="没有可用的{{transactionTypeLabel}}分类"
+        description="请确认用户初始化和默认分类数据后重试"
+      />
+      <app-empty
+        wx:if="{{accounts.length === 0}}"
+        title="没有可用资金渠道"
+        description="请确认默认资金渠道数据后重试"
+      />
+      <button class="secondary-button" bindtap="handleRetry">重新加载</button>
+    </view>
+
+    <view class="form-card">
+      <view class="amount-field">
+        <text class="currency-symbol">¥</text>
+        <input
+          class="amount-input"
+          type="digit"
+          value="{{form.amountInput}}"
+          placeholder="0.00"
+          disabled="{{submitting}}"
+          bindinput="handleAmountInput"
+        />
+        <text class="amount-unit">元</text>
+      </view>
+      <text class="field-error" wx:if="{{formErrors.amount}}">{{formErrors.amount}}</text>
+
+      <view class="field-row">
+        <text class="field-label">{{transactionTypeLabel}}分类</text>
+        <picker
+          class="field-control"
+          mode="selector"
+          range="{{categories}}"
+          range-key="name"
+          value="{{categoryIndex}}"
+          disabled="{{submitting || categories.length === 0}}"
+          bindchange="handleCategoryChange"
+        >
+          <view class="picker-value">{{categories[categoryIndex].name || '请选择'}}</view>
+        </picker>
+      </view>
+      <text class="field-error" wx:if="{{formErrors.category}}">{{formErrors.category}}</text>
+
+      <view class="field-row">
+        <text class="field-label">{{transactionType === 'income' ? '收款方式' : '支付方式'}}</text>
+        <picker
+          class="field-control"
+          mode="selector"
+          range="{{accounts}}"
+          range-key="name"
+          value="{{accountIndex}}"
+          disabled="{{submitting || accounts.length === 0}}"
+          bindchange="handleAccountChange"
+        >
+          <view class="picker-value">{{accounts[accountIndex].name || '请选择'}}</view>
+        </picker>
+      </view>
+      <text class="field-error" wx:if="{{formErrors.account}}">{{formErrors.account}}</text>
+
+      <view class="field-row datetime-row">
+        <text class="field-label">发生时间</text>
+        <view class="datetime-controls">
+          <picker mode="date" value="{{form.dateValue}}" disabled="{{submitting}}" bindchange="handleDateChange">
+            <view class="picker-value compact">{{form.dateValue}}</view>
+          </picker>
+          <picker mode="time" value="{{form.timeValue}}" disabled="{{submitting}}" bindchange="handleTimeChange">
+            <view class="picker-value compact">{{form.timeValue}}</view>
+          </picker>
+        </view>
+      </view>
+      <text class="field-error" wx:if="{{formErrors.occurredAt}}">{{formErrors.occurredAt}}</text>
+
+      <view class="note-field">
+        <view class="note-header">
+          <text class="field-label">备注（可选）</text>
+          <text class="note-count">{{noteLength}}/200</text>
+        </view>
+        <textarea
+          class="note-input"
+          value="{{form.note}}"
+          maxlength="200"
+          placeholder="{{transactionType === 'income' ? '例如：7月工资' : '例如：午餐'}}"
+          disabled="{{submitting}}"
+          bindinput="handleNoteInput"
+        />
+      </view>
+      <text class="field-error" wx:if="{{formErrors.note}}">{{formErrors.note}}</text>
+
+      <view class="submit-error" wx:if="{{submitErrorMessage}}" role="alert">
+        <text>{{submitErrorMessage}}</text>
+        <button class="inline-retry" disabled="{{submitting}}" bindtap="handleRetrySubmission">重试保存</button>
+      </view>
+
+    </view>
+
+    <view class="success-card" wx:if="{{savedTransaction}}" role="status">
+      <text class="success-title">{{successMessage}}</text>
+      <text class="success-detail">已写入并查询确认：¥{{savedAmountDisplay}}</text>
+      <text class="success-id">账单编号：{{savedTransaction.transactionId}}</text>
+      <button class="secondary-button" bindtap="handleBackToLedger">返回账单流水</button>
+      <button class="text-button" bindtap="handleCreateAnother">再记一笔</button>
+    </view>
+
+    <view class="form-action-dock" wx:if="{{viewState === 'ready' && !savedTransaction}}">
+      <button
+        class="save-button"
+        type="primary"
+        loading="{{submitting}}"
+        disabled="{{!canSubmit || submitting || categories.length === 0 || accounts.length === 0}}"
+        bindtap="handleSubmit"
+      >
+        {{submitting ? '正在保存' : '保存' + transactionTypeLabel}}
+      </button>
+    </view>
+  </block>
+</view>

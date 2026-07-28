@@ -130,7 +130,7 @@
 * 分类统计页；
 * 月度趋势页；
 * 预算设置页；
-* 账户管理页；
+* 固定资金渠道说明；
 * 收支分类管理页。
 
 ### 待办模块
@@ -165,7 +165,7 @@
 ### 我的模块
 
 * 用户信息；
-* 默认记账账户；
+* 默认支付方式和默认收款方式；
 * 收支分类设置；
 * 默认城市设置；
 * 提醒设置；
@@ -196,7 +196,7 @@
 * 注册时间；
 * 最近登录时间；
 * 默认城市；
-* 默认记账账户；
+* 默认支付方式和默认收款方式；
 * 用户偏好设置。
 
 ### 4.1.2 首次使用引导
@@ -204,10 +204,8 @@
 首次进入时，仅进行简短引导：
 
 1. 说明小程序核心功能；
-2. 让用户选择默认记账货币；
-3. 创建默认账户；
-4. 询问是否设置所在城市；
-5. 询问是否创建月度预算。
+2. 创建微信、支付宝、银行卡、现金和其他五个固定支付/收款渠道；
+3. 询问是否设置所在城市。
 
 位置权限不得成为使用记账和待办功能的前置条件。用户不同意位置授权时，应允许手动选择城市。
 
@@ -279,7 +277,6 @@
 
 * 支出；
 * 收入；
-* 转账，建议在第二阶段提供。
 
 必填字段：
 
@@ -287,7 +284,7 @@
 * 金额；
 * 分类；
 * 发生时间；
-* 所属账户。
+* 支出选择支付方式，收入选择收款方式。
 
 选填字段：
 
@@ -347,9 +344,9 @@
 
 已经被账单使用的分类不建议物理删除，应采用停用方式，避免历史账单失去分类信息。
 
-### 4.3.4 账户管理
+### 4.3.4 固定资金渠道
 
-默认账户可以包括：
+固定资金渠道包括：
 
 * 微信；
 * 支付宝；
@@ -357,17 +354,14 @@
 * 现金；
 * 其他。
 
-每个账户包含：
+每个渠道只包含：
 
-* 账户名称；
-* 账户图标；
-* 账户类型；
-* 初始余额；
-* 当前余额；
-* 是否计入总资产；
+* 渠道名称；
+* 渠道图标；
+* 渠道类型；
 * 是否启用。
 
-首期可以只记录账户维度，不强制计算真实余额。若启用余额功能，则需要处理初始余额、收入、支出和转账对余额的影响。
+这些固定项仅表示钱通过哪种方式支付或收取，不表示用户持有的资产。首期不提供资产核算或渠道自定义管理。
 
 ### 4.3.5 账单流水
 
@@ -403,7 +397,6 @@
 
 * 不再计入统计；
 * 不再计入预算；
-* 如果启用了账户余额，应回滚相应余额变化；
 * 建议先进行逻辑删除，保留短期恢复能力；
 * 后台清理任务可以在一定周期后物理删除。
 
@@ -433,6 +426,8 @@
 * 环形图展示分类占比；
 * 折线图展示时间趋势；
 * 横向条形图展示分类排行。
+
+当前统计分析阶段先交付按月闭环：月收入、月支出、月结余、收支笔数、近 6/12 个月趋势，以及收入/支出分类排行。趋势必须跨年并补齐空月；分类可下钻到现有流水列表。今日、本周、自定义范围、日均、最大单笔和复杂图表留待后续独立任务，不在本阶段静默扩展。
 
 ### 4.3.8 月度预算
 
@@ -718,7 +713,8 @@
 | nickname         | String | 昵称                      |
 | avatarUrl        | String | 头像                      |
 | currency         | String | 默认货币，默认 CNY             |
-| defaultAccountId | String | 默认账户                    |
+| defaultExpenseAccountId | String | 默认支付方式             |
+| defaultIncomeAccountId | String | 默认收款方式               |
 | defaultCityId    | String | 默认城市                    |
 | timezone         | String | 用户时区                    |
 | createdAt        | Date   | 注册时间                    |
@@ -732,11 +728,10 @@
 | --------------- | ------- | ----------------------- |
 | _id             | String  | 账单编号                    |
 | userId          | String  | 所属用户                    |
-| type            | String  | expense、income、transfer |
+| type            | String  | expense、income           |
 | amount          | Number  | 最小货币单位金额                |
 | categoryId      | String  | 分类编号                    |
 | accountId       | String  | 账户编号                    |
-| targetAccountId | String  | 转账目标账户                  |
 | occurredAt      | Date    | 发生时间                    |
 | merchant        | String  | 商家或交易对象                 |
 | note            | String  | 备注                      |
@@ -762,17 +757,14 @@
 | isEnabled | Boolean | 是否启用             |
 | createdAt | Date    | 创建时间             |
 
-## 6.4 accounts 账户表
+## 6.4 accounts 固定资金渠道表
 
 | 字段              | 类型      | 说明                            |
 | --------------- | ------- | ----------------------------- |
 | _id             | String  | 账户编号                          |
 | userId          | String  | 所属用户                          |
-| name            | String  | 账户名称                          |
+| name            | String  | 渠道名称                          |
 | type            | String  | cash、wechat、alipay、bank、other |
-| initialBalance  | Number  | 初始余额                          |
-| currentBalance  | Number  | 当前余额                          |
-| includeInAssets | Boolean | 是否计入资产                        |
 | isEnabled       | Boolean | 是否启用                          |
 | createdAt       | Date    | 创建时间                          |
 | updatedAt       | Date    | 更新时间                          |
@@ -826,32 +818,40 @@
 
 ## 6.8 weather_cache 天气缓存表
 
-| 字段          | 类型     | 说明               |
-| ----------- | ------ | ---------------- |
-| _id         | String | 缓存编号             |
-| locationKey | String | 城市或坐标标识          |
-| dataType    | String | now、hourly、daily |
-| data        | Object | 标准化后的天气数据        |
-| provider    | String | 数据提供方            |
-| observedAt  | Date   | 气象数据对应时间         |
-| fetchedAt   | Date   | 系统获取时间           |
-| expiresAt   | Date   | 缓存失效时间           |
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| _id | String | 缓存编号 |
+| cacheKey | String | provider、locationKey、dataType 组成的唯一键 |
+| locationKey | String | 标准城市标识；当前为 `open-meteo:<latitude>,<longitude>` |
+| displayName | String | 标准展示名 |
+| dataType | String | `current`、`daily`；小时预报延期 |
+| normalizedData | Object | 版本化标准 DTO，不保存供应商原始响应 |
+| schemaVersion | Number | 标准结构版本 |
+| provider | String | 数据提供方 |
+| observedAt | Date | 气象数据对应时间 |
+| fetchedAt | Date | 系统获取时间 |
+| expiresAt | Date | 新鲜缓存失效时间 |
+| staleUntil | Date | 允许失败降级的最晚时间 |
+| updatedAt | Date | 服务端更新时间 |
 
 ## 6.9 user_settings 用户设置表
 
 用于保存：
 
-* 默认首页模块顺序；
-* 是否显示预算；
-* 是否显示天气；
+* 默认记账类型；
+* 默认支付方式；
+* 默认收款方式；
 * 默认城市；
-* 默认账户；
-* 主题设置；
-* 提醒偏好；
-* 隐私授权状态；
-* 数据导出设置。
+* 是否优先使用定位；
+* 时区和现有兼容偏好。
 
-## 6.10 推荐索引
+记账设置和天气设置必须分组更新，任一分组更新不得覆盖另一分组。默认支付和收款方式必须属于当前用户且处于可用状态。
+
+## 6.10 data_deletion_requests 删除申请表
+
+保存当前用户唯一的删除申请，状态为 `pending`、`cancelled`、`processing`、`completed` 或 `failed`。记录服务端申请时间、固定 7 天冷静期结束时间、执行租约、失败重试时间、分批进度和版本；不保存微信身份或业务正文。
+
+## 6.11 推荐索引
 
 建议建立以下组合索引：
 
@@ -862,6 +862,7 @@
 * todos：userId + listId + dueAt；
 * budgets：userId + yearMonth；
 * weather_cache：locationKey + dataType；
+* data_deletion_requests：ownerId 唯一，以及 status + cooldownEndsAt / nextRetryAt / leaseExpiresAt；
 * users：openId 唯一索引；
 * requestId 在用户范围内建立唯一性约束或重复检测机制。
 
@@ -930,7 +931,7 @@ TDesign 提供适配微信小程序的组件库，WeUI 则更贴近微信原生�
 * 查询流水；
 * 统计汇总；
 * 预算计算；
-* 账户管理；
+* 固定资金渠道读取；
 * 分类管理。
 
 ### todo 待办函数
@@ -1047,7 +1048,7 @@ miniprogram/
 数据库权限应遵循最小权限原则：
 
 * 客户端不能读取其他用户数据；
-* 涉及统计、批量删除和余额修改的操作通过云函数完成；
+* 涉及统计和批量删除的操作通过云函数完成；
 * 所有修改操作校验用户身份；
 * 上传的图片路径与用户绑定；
 * 管理后台不得默认展示完整个人数据。
@@ -1092,7 +1093,7 @@ miniprogram/
 * 用户上传的图片；
 * 与用户相关的日志标识。
 
-可以设置短暂冷静期，但必须在隐私政策中明确说明。
+删除申请采用统一 7 天冷静期，`pending` 状态可撤销。普通前端不能直接执行正式删除；受保护后台执行器按用户归属分批删除并支持失败恢复、重复执行安全。共享天气缓存不含用户身份，不随个人数据删除清理。
 
 ---
 
@@ -1174,7 +1175,7 @@ MVP 目标是形成一个能够正式使用的闭环。
 * 账单编辑与删除；
 * 默认分类；
 * 自定义分类；
-* 账户管理；
+* 固定资金渠道；
 * 本月收支统计；
 * 基础预算；
 * 待办新增、修改、完成和删除；

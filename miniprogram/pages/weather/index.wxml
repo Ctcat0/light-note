@@ -1,0 +1,44 @@
+<view class="page-shell weather-page">
+  <view class="page-header">
+    <text class="page-title">天气与城市</text>
+    <text class="page-description">位置权限不是必需项，也可以手动搜索并保存常用城市。</text>
+  </view>
+
+  <view class="search-card">
+    <view class="search-row">
+      <input class="city-input" value="{{query}}" maxlength="40" placeholder="输入城市或区县" bindinput="handleQueryInput" bindconfirm="handleSearch" />
+      <button class="search-button" loading="{{searching}}" disabled="{{searching}}" bindtap="handleSearch">搜索</button>
+    </view>
+    <button class="location-button" loading="{{locating}}" disabled="{{locating}}" bindtap="handleUseCurrentLocation">使用当前位置</button>
+    <button wx:if="{{locationPermissionDenied}}" class="location-settings-button" bindtap="handleOpenLocationSettings">打开设置授权定位</button>
+    <text wx:if="{{locationHint}}" class="location-hint">{{locationHint}}</text>
+    <view wx:if="{{locations.length > 0}}" class="location-list">
+      <button wx:for="{{locations}}" wx:key="locationKey" class="location-item" data-index="{{index}}" disabled="{{saving}}" bindtap="handleSelectLocation">
+        <text class="location-name">{{item.displayName}}</text>
+        <text class="location-admin">{{item.adminArea || item.countryCode}}</text>
+      </button>
+    </view>
+  </view>
+
+  <view class="page-state-card" wx:if="{{viewState === 'loading'}}"><app-loading message="正在加载天气" /></view>
+  <view class="page-state-card" wx:elif="{{viewState === 'error'}}"><app-error-state title="天气加载失败" message="{{errorMessage}}" bind:retry="handleRetry" /></view>
+  <view class="page-state-card" wx:elif="{{viewState === 'empty'}}"><app-empty title="还没有选择城市" description="手动搜索城市，或主动使用当前位置" /></view>
+
+  <view wx:else class="weather-card">
+    <view class="weather-main">
+      <view><text class="weather-city">{{currentLocationName}}</text><text class="weather-condition">{{weather.current.conditionText}}</text></view>
+      <text class="weather-temperature">{{temperatureDisplay}}</text>
+    </view>
+    <view class="weather-meta">
+      <text>体感 {{feelsLikeDisplay}}</text><text>湿度 {{humidityDisplay}}</text><text>{{windDisplay}}</text>
+    </view>
+    <text wx:if="{{cacheNotice}}" class="cache-notice">{{cacheNotice}}</text>
+    <text class="updated-at">更新于 {{updatedDisplay}}</text>
+    <text class="weather-provider">天气数据：Open-Meteo</text>
+    <view class="forecast-list">
+      <view wx:for="{{forecasts}}" wx:key="dateKey" class="forecast-item">
+        <text>{{item.label}}</text><text>{{item.conditionText}}</text><text>{{item.temperature}}</text>
+      </view>
+    </view>
+  </view>
+</view>

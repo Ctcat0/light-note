@@ -4,8 +4,8 @@ export const CLOUD_FUNCTIONS = {
   TODO: "todo",
   WEATHER: "weather",
   HOME: "home",
+  DATA_DELETION: "dataDeletion",
 } as const;
 
 export type CloudFunctionName =
   (typeof CLOUD_FUNCTIONS)[keyof typeof CLOUD_FUNCTIONS];
-

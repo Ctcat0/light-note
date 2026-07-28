@@ -1,0 +1,34 @@
+<view class="page-shell ledger-page">
+  <view class="page-header">
+    <text class="page-title">编辑{{transactionTypeLabel}}</text>
+    <text class="page-description">调整金额、分类、{{transactionTypeLabel === '收入' ? '收款方式' : '支付方式'}}或发生时间。</text>
+  </view>
+
+  <view class="page-state-card" wx:if="{{viewState === 'loading'}}"><app-loading message="正在加载账单" /></view>
+  <view class="page-state-card" wx:elif="{{viewState === 'error'}}"><app-error-state title="账单加载失败" message="{{errorMessage}}" bind:retry="handleRetry" /></view>
+
+  <view class="form-card" wx:else>
+    <view class="type-chip">{{transactionTypeLabel}}</view>
+    <view class="amount-field">
+      <text class="currency-symbol">¥</text>
+      <input class="amount-input" type="digit" value="{{form.amountInput}}" disabled="{{saving || deleting}}" bindinput="handleAmountInput" />
+      <text class="amount-unit">元</text>
+    </view>
+    <text class="field-error" wx:if="{{formErrors.amount}}">{{formErrors.amount}}</text>
+
+    <view class="field-row"><text class="field-label">{{transactionTypeLabel}}分类</text><picker class="field-control" mode="selector" range="{{categories}}" range-key="name" value="{{categoryIndex}}" disabled="{{saving || deleting}}" bindchange="handleCategoryChange"><view class="picker-value">{{categories[categoryIndex].name || '请选择'}}</view></picker></view>
+    <text class="field-error" wx:if="{{formErrors.category}}">{{formErrors.category}}</text>
+    <view class="field-row"><text class="field-label">{{transactionTypeLabel === '收入' ? '收款方式' : '支付方式'}}</text><picker class="field-control" mode="selector" range="{{accounts}}" range-key="name" value="{{accountIndex}}" disabled="{{saving || deleting}}" bindchange="handleAccountChange"><view class="picker-value">{{accounts[accountIndex].name || '请选择'}}</view></picker></view>
+    <text class="field-error" wx:if="{{formErrors.account}}">{{formErrors.account}}</text>
+    <view class="field-row datetime-row"><text class="field-label">发生时间</text><view class="datetime-controls"><picker mode="date" value="{{form.dateValue}}" disabled="{{saving || deleting}}" bindchange="handleDateChange"><view class="picker-value compact">{{form.dateValue}}</view></picker><picker mode="time" value="{{form.timeValue}}" disabled="{{saving || deleting}}" bindchange="handleTimeChange"><view class="picker-value compact">{{form.timeValue}}</view></picker></view></view>
+    <text class="field-error" wx:if="{{formErrors.occurredAt}}">{{formErrors.occurredAt}}</text>
+    <view class="note-field"><view class="note-header"><text class="field-label">备注（可选）</text><text class="note-count">{{noteLength}}/200</text></view><textarea class="note-input" value="{{form.note}}" maxlength="200" disabled="{{saving || deleting}}" bindinput="handleNoteInput" /></view>
+    <text class="field-error" wx:if="{{formErrors.note}}">{{formErrors.note}}</text>
+
+    <view class="submit-error" wx:if="{{mutationErrorMessage}}"><text>{{mutationErrorMessage}}</text><button class="inline-retry" wx:if="{{conflict}}" bindtap="handleReload">重新加载</button></view>
+  </view>
+  <view class="form-action-dock edit-action-dock" wx:if="{{viewState === 'ready'}}">
+    <button class="delete-button" loading="{{deleting}}" disabled="{{saving || deleting}}" bindtap="handleDelete">{{deleting ? '删除中' : '删除'}}</button>
+    <button class="save-button" type="primary" loading="{{saving}}" disabled="{{!canSave || saving || deleting}}" bindtap="handleSave">{{saving ? '正在保存' : (dirty ? '保存修改' : '暂无修改')}}</button>
+  </view>
+</view>

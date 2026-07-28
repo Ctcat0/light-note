@@ -1,21 +1,93 @@
-<view class="page-shell">
-  <view class="page-header">
-    <text class="page-title">记账</text>
-    <text class="page-description">账单录入和流水查询将在独立任务中实现。</text>
+<view class="page-shell ledger-list-page">
+  <view class="month-card-shell">
+    <view class="month-card">
+      <view class="ledger-toolbar">
+        <text class="toolbar-title">账单流水</text>
+        <button class="statistics-entry" size="mini" bindtap="handleOpenStatistics">统计分析</button>
+      </view>
+      <view class="type-tabs" role="tablist">
+        <view class="type-tab {{selectedFilter === 'all' ? 'active' : ''}}" data-filter="all" bindtap="handleFilterChange">全部</view>
+        <view class="type-tab {{selectedFilter === 'expense' ? 'active' : ''}}" data-filter="expense" bindtap="handleFilterChange">支出</view>
+        <view class="type-tab {{selectedFilter === 'income' ? 'active' : ''}}" data-filter="income" bindtap="handleFilterChange">收入</view>
+      </view>
+      <view class="category-filter-chip" wx:if="{{categoryFilterId}}" bindtap="handleClearCategoryFilter">
+        分类：{{categoryFilterName}} ×
+      </view>
+      <view class="month-selector">
+        <button class="month-arrow" aria-label="上一个月" bindtap="handlePreviousMonth">‹</button>
+        <picker mode="date" fields="month" value="{{selectedMonthPickerValue}}" end="{{currentMonthEndValue}}" bindchange="handleMonthPickerChange">
+          <view class="month-label">{{selectedMonthLabel}}</view>
+        </picker>
+        <button class="month-arrow" aria-label="下一个月" disabled="{{!canSelectNextMonth}}" bindtap="handleNextMonth">›</button>
+      </view>
+      <block wx:if="{{summary}}">
+        <text class="summary-label">本月结余</text>
+        <text class="summary-amount">{{monthBalanceDisplay}}</text>
+        <view class="summary-grid">
+          <view class="summary-total summary-income">
+            <text class="summary-grid-label">收入总计</text>
+            <text class="summary-grid-value">{{monthIncomeDisplay}}</text>
+          </view>
+          <view class="summary-total summary-expense">
+            <text class="summary-grid-label">支出总计</text>
+            <text class="summary-grid-value">{{monthExpenseDisplay}}</text>
+          </view>
+        </view>
+      </block>
+      <text class="summary-pending" wx:else>{{loadStatus === 'initialError' ? '加载失败' : '—'}}</text>
+    </view>
+    <button class="ledger-drop-add" aria-label="记一笔" bindtap="handleAddTransaction">
+      <text class="ledger-drop-symbol">＋</text>
+    </button>
   </view>
 
-  <view class="page-state-card">
-    <app-loading wx:if="{{viewState === 'loading'}}" message="正在加载账单" />
-    <app-error-state
-      wx:elif="{{viewState === 'error'}}"
-      message="{{errorMessage}}"
-      bind:retry="handleRetry"
-    />
-    <app-empty
-      wx:else
-      title="记账骨架已就绪"
-      description="当前未创建账单，也未使用模拟数据"
-    />
+  <view class="page-state-card" wx:if="{{loadStatus === 'initialLoading'}}">
+    <app-loading message="正在加载{{selectedFilterLabel}}流水" />
   </view>
+
+  <view class="page-state-card" wx:elif="{{loadStatus === 'initialError'}}">
+    <app-error-state title="账单流水加载失败" message="{{errorMessage}}" bind:retry="handleRetry" />
+  </view>
+
+  <view class="empty-card" wx:elif="{{loadStatus === 'empty'}}">
+    <app-empty title="{{selectedMonthLabel}}暂无{{selectedFilterLabel}}记录" description="记录一笔后会显示在这里" />
+  </view>
+
+  <block wx:else>
+    <view class="refresh-note" wx:if="{{loadStatus === 'refreshing'}}">正在刷新…</view>
+    <view class="refresh-error" wx:if="{{loadStatus === 'refreshError'}}">
+      <text>{{errorMessage}}</text>
+      <button class="inline-button" bindtap="handleRetry">重试刷新</button>
+    </view>
+
+    <view class="day-group" wx:for="{{groups}}" wx:key="dateKey" wx:for-item="group">
+      <view class="day-header">
+        <view>
+          <text class="day-date">{{group.dateLabel}}</text>
+          <text class="day-weekday">{{group.weekdayLabel}}</text>
+        </view>
+        <view class="day-totals">
+          <text>收入 ¥{{group.incomeDisplay}}</text>
+          <text>支出 ¥{{group.expenseDisplay}}</text>
+        </view>
+      </view>
+      <view class="transaction-row" wx:for="{{group.items}}" wx:key="transactionId" wx:for-item="item" data-id="{{item.transactionId}}" bindtap="handleTransactionTap">
+        <view class="category-icon">{{item.categoryIconDisplay}}</view>
+        <view class="transaction-main">
+          <text class="transaction-title">{{item.title}}</text>
+          <text class="transaction-meta">{{item.secondaryText}}</text>
+        </view>
+        <text class="transaction-amount {{item.type}}">{{item.type === 'expense' ? '-' : '+'}}¥{{item.amountDisplay}}</text>
+      </view>
+    </view>
+
+    <view class="load-footer" wx:if="{{loadStatus === 'loadingMore'}}">
+      <app-loading message="正在加载更多" />
+    </view>
+    <view class="load-more-error" wx:elif="{{loadStatus === 'loadMoreError'}}">
+      <text>{{errorMessage}}</text>
+      <button class="inline-button" bindtap="handleLoadMoreRetry">重新加载</button>
+    </view>
+    <view class="no-more" wx:elif="{{loadStatus === 'noMore' && items.length > 0}}">没有更多了</view>
+  </block>
 </view>
-

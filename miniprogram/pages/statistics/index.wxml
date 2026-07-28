@@ -1,0 +1,80 @@
+<view class="page-shell statistics-page">
+  <view class="statistics-header">
+    <view>
+      <text class="page-title">收支统计</text>
+      <text class="page-description">按月查看汇总、趋势与分类排行</text>
+    </view>
+    <picker mode="date" fields="month" value="{{selectedMonthValue}}" end="{{currentMonthEndValue}}" bindchange="handleMonthChange">
+      <view class="month-picker">{{selectedMonthLabel}} ▾</view>
+    </picker>
+  </view>
+
+  <view class="page-state-card" wx:if="{{pageState === 'initialLoading' || pageState === 'retrying'}}">
+    <app-loading message="正在汇总收支统计" />
+  </view>
+  <view class="page-state-card" wx:elif="{{pageState === 'initialError'}}">
+    <app-error-state message="{{errorMessage}}" bind:retry="handleRetry" />
+  </view>
+
+  <block wx:else>
+    <view class="partial-error" wx:if="{{pageState === 'partialError'}}">
+      <text>{{partialErrorMessage}}</text>
+      <button size="mini" bindtap="handleRetry">重试</button>
+    </view>
+    <view class="refreshing-tip" wx:if="{{pageState === 'refreshing'}}">正在刷新，当前数据暂时保留</view>
+    <view class="empty-banner" wx:if="{{pageState === 'empty'}}">{{selectedMonthLabel}}暂无收支记录</view>
+
+    <view class="statistics-card summary-card">
+      <view class="section-title-row"><text class="section-title">月度概览</text></view>
+      <view class="section-error" wx:if="{{summaryStatus === 'error'}}"><text>概览刷新失败，保留最近数据</text><button size="mini" bindtap="handleRetry">重试</button></view>
+      <view class="summary-grid" wx:if="{{summary}}">
+        <view class="summary-item income"><text>收入</text><text class="summary-amount">{{monthIncomeDisplay || '¥0.00'}}</text><text>{{summary ? summary.incomeCount : 0}} 笔</text></view>
+        <view class="summary-item expense"><text>支出</text><text class="summary-amount">{{monthExpenseDisplay || '¥0.00'}}</text><text>{{summary ? summary.expenseCount : 0}} 笔</text></view>
+        <view class="summary-item balance"><text>结余</text><text class="summary-amount">{{monthBalanceDisplay || '¥0.00'}}</text><text>收入 - 支出</text></view>
+      </view>
+    </view>
+
+    <view class="statistics-card">
+      <view class="section-title-row">
+        <text class="section-title">月度趋势</text>
+        <view class="period-tabs">
+          <text class="period-tab {{monthCount === 6 ? 'active' : ''}}" data-count="6" bindtap="handleMonthCountChange">近6月</text>
+          <text class="period-tab {{monthCount === 12 ? 'active' : ''}}" data-count="12" bindtap="handleMonthCountChange">近12月</text>
+        </view>
+      </view>
+      <view class="section-error" wx:if="{{trendStatus === 'error'}}"><text>趋势刷新失败，保留最近数据</text><button size="mini" bindtap="handleRetry">重试</button></view>
+      <view class="section-empty" wx:if="{{trendStatus === 'empty'}}">暂无趋势数据</view>
+      <view class="trend-list" wx:if="{{trendItems.length}}">
+        <view class="trend-row" wx:for="{{trendItems}}" wx:key="monthKey">
+          <view class="trend-heading"><text>{{item.label}}</text><text>结余 {{item.balanceDisplay}}</text></view>
+          <view class="bar-line"><text>收</text><view class="bar-track"><view class="bar income" style="width: {{item.incomeWidth}}%;"></view></view><text>{{item.incomeDisplay}}</text></view>
+          <view class="bar-line"><text>支</text><view class="bar-track"><view class="bar expense" style="width: {{item.expenseWidth}}%;"></view></view><text>{{item.expenseDisplay}}</text></view>
+        </view>
+      </view>
+    </view>
+
+    <view class="statistics-card">
+      <view class="section-title-row"><text class="section-title">支出分类</text></view>
+      <view class="section-error" wx:if="{{expenseStatus === 'error'}}"><text>支出分类刷新失败，保留最近数据</text><button size="mini" bindtap="handleRetry">重试</button></view>
+      <view class="section-empty" wx:if="{{expenseStatus === 'empty'}}">本月暂无支出</view>
+      <view class="category-list" wx:if="{{expenseItems.length}}">
+        <view class="category-row" wx:for="{{expenseItems}}" wx:key="categoryId" data-type="expense" data-category-id="{{item.categoryId}}" data-category-name="{{item.categoryName}}" bindtap="handleCategoryTap">
+          <view class="category-heading"><text>{{item.categoryName}}</text><text>{{item.amountDisplay}} · {{item.ratioDisplay}} · {{item.count}}笔</text></view>
+          <view class="category-track"><view class="category-bar expense" style="width: {{item.barWidth}}%;"></view></view>
+        </view>
+      </view>
+    </view>
+
+    <view class="statistics-card">
+      <view class="section-title-row"><text class="section-title">收入分类</text></view>
+      <view class="section-error" wx:if="{{incomeStatus === 'error'}}"><text>收入分类刷新失败，保留最近数据</text><button size="mini" bindtap="handleRetry">重试</button></view>
+      <view class="section-empty" wx:if="{{incomeStatus === 'empty'}}">本月暂无收入</view>
+      <view class="category-list" wx:if="{{incomeItems.length}}">
+        <view class="category-row" wx:for="{{incomeItems}}" wx:key="categoryId" data-type="income" data-category-id="{{item.categoryId}}" data-category-name="{{item.categoryName}}" bindtap="handleCategoryTap">
+          <view class="category-heading"><text>{{item.categoryName}}</text><text>{{item.amountDisplay}} · {{item.ratioDisplay}} · {{item.count}}笔</text></view>
+          <view class="category-track"><view class="category-bar income" style="width: {{item.barWidth}}%;"></view></view>
+        </view>
+      </view>
+    </view>
+  </block>
+</view>
